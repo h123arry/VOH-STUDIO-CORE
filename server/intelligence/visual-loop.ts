@@ -1,0 +1,4 @@
+export type VisualChangeRequest = { projectId: number; previewPath: string; elementHint: string; instruction: string; screenshotPath?: string };
+export type VisualLoopStage = "generate" | "preview" | "capture" | "identify" | "modify" | "verify";
+export const VISUAL_LOOP: VisualLoopStage[] = ["generate", "preview", "capture", "identify", "modify", "verify"];
+export function visualChangePlan(input: VisualChangeRequest) { return { stages: VISUAL_LOOP, target: input.elementHint.trim(), instruction: input.instruction.trim(), sourceMapping: { strategy: "retrieve files whose markup, class names, or nearby text match the element hint", confidence: "requires screenshot or preview evidence before an autonomous edit" }, safety: "Only project-owned files are eligible; no external site is modified." }; }
