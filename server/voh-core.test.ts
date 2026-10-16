@@ -121,6 +121,14 @@ describe("VOH core policies", () => {
     expect(plan.loop).toContain("render again");
     expect(plan.inputs[0].accepted).toBe(true);
   });
+  it("previews sensitive intent and an actionable workflow before task execution", () => {
+    const plan = buildCreationPlan("Deploy this application to production and publish the release");
+    expect(plan.mode).toBe("deploy");
+    expect(plan.safety.approvalRequired).toBe(true);
+    expect(plan.safety.protectedActions).toEqual(expect.arrayContaining(["production", "publish"]));
+    expect(plan.phases).toContain("verify");
+    expect(plan.agents.length).toBeGreaterThan(0);
+  });
   it("explains only evidence-backed outcomes and exposes safe next actions", () => {
     const result = explainCreationResult(["Added protected routes"], ["build passed", "login flow verified"], ["deployment still requires approval"]);
     expect(result.summary).toMatch(/1 meaningful change/);
