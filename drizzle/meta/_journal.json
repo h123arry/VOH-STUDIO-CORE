@@ -50,6 +50,13 @@
       "when": 1791156463132,
       "tag": "0006_gorgeous_blockbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1792215918253,
+      "tag": "0007_mode_aware_tasks",
+      "breakpoints": true
     }
   ]
 }

@@ -5,13 +5,13 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { AGENT_REGISTRY } from "./agents/registry";
 import { createProject, getProjectForOwner, listProjectFiles, listProjects, updateProjectSettings, updateProjectTask } from "./domain/project-service";
-import { buildProjectMemory } from "./domain/project-memory";
+import { buildProjectMemory, containsSensitiveValue } from "./domain/project-memory";
 import { compareProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from "./domain/snapshot-service";
 import { listArtifacts } from "./domain/artifact-service";
-import { appendTaskEvent, createTask, getTaskForOwner, listAgentRuns, listErrors, listQueuedInstructions, listTaskEvents, listTaskSteps, listTasks, listToolCalls, listVerifications, queueTaskInstruction, updateTask } from "./domain/task-service";
-import { startTask } from "./orchestrator/orchestrator";
+import { appendTaskEvent, approveTaskPlan, createTask, getTaskForOwner, listAgentRuns, listErrors, listQueuedInstructions, listTaskEvents, listTaskSteps, listTasks, listToolCalls, listVerifications, markInstruction, queueTaskInstruction, updateTask } from "./domain/task-service";
+import { cancelTaskExecution, startTask } from "./orchestrator/orchestrator";
 import { modelRoutes } from "./models/model-router";
-import { readWorkspaceFile, listWorkspaceFiles } from "./tools/workspace-tools";
+import { inspectWorkspace, readWorkspaceFile, listWorkspaceFiles } from "./tools/workspace-tools";
 import { TOOL_REGISTRY, toolsForAgent } from "./tools/registry";
 import { listTemplates } from "./templates/registry";
 import { latestQualityScore } from "./quality/quality-engine";
@@ -26,6 +26,7 @@ import { visualChangePlan } from "./intelligence/visual-loop";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { projects } from "../drizzle/schema";
+import { executionModePolicy } from "./domain/execution-mode";
 import { gitStatus, gitInit, gitHistory, gitDiff, gitCreateBranch, gitSwitchBranch, gitMerge, gitRestore, gitRevert, gitTag, gitFetch, gitPull, gitPush, gitCommit, cloneRepository, inspectCommitSafety, draftReleaseNotes } from "./lifecycle/git-service";
 import { githubAvailability, githubOperation } from "./lifecycle/github-adapter";
 import { mapRepository, reviewRepository } from "./lifecycle/repository-intelligence";
@@ -36,7 +37,16 @@ import { engineeringAnalysis, engineeringBrief, maintenancePlan } from "./intell
 import { buildCreationPlan, capabilityCatalog, crossProjectReuse, explainCreationResult, inferCreationMode, matchCapabilities } from "./intelligence/creation-engine";
 
 const projectType = z.enum(["website", "web_app", "api", "backend", "mobile", "game", "ai_app", "automation", "dashboard", "saas"]);
-const projectSettings = z.object({ developerMode: z.boolean().optional(), commandPolicy: z.literal("safe").optional() }).strict();
+const projectSettings = z.object({
+  developerMode: z.boolean().optional(),
+  commandPolicy: z.literal("safe").optional(),
+  projectMemory: z.string().max(4000).optional().refine(value => !value || !containsSensitiveValue(value), "Project memory cannot contain credentials or private keys"),
+}).strict();
+const defaultProjectSettings: z.infer<typeof projectSettings> = {
+  developerMode: false,
+  commandPolicy: "safe",
+  projectMemory: "",
+};
 
 export const appRouter = router({
   system: systemRouter,
@@ -66,8 +76,8 @@ export const appRouter = router({
     settings: router({
       get: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => {
         const project = await getProjectForOwner(ctx.user.id, input.projectId);
-        if (!project?.settings) return { developerMode: false, commandPolicy: "safe" };
-        try { return projectSettings.parse(JSON.parse(project.settings)); } catch { return { developerMode: false, commandPolicy: "safe" }; }
+        if (!project?.settings) return defaultProjectSettings;
+        try { return projectSettings.parse(JSON.parse(project.settings)); } catch { return defaultProjectSettings; }
       }),
       update: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), settings: projectSettings })).mutation(async ({ ctx, input }) => {
         await updateProjectSettings(input.projectId, ctx.user.id, input.settings);
@@ -101,18 +111,37 @@ export const appRouter = router({
       const [steps, events, agents, toolCalls, errors, verifications, artifacts, quality] = await Promise.all([listTaskSteps(task.id), listTaskEvents(task.id), listAgentRuns(task.id), listToolCalls(task.id), listErrors(task.id), listVerifications(task.id), listArtifacts(task.id), latestQualityScore(task.projectId, task.id)]);
       return { task, steps, events, agents, toolCalls, errors, verifications, artifacts, quality };
     }),
-    create: protectedProcedure.input(z.object({ projectId: z.number().int().positive().optional(), projectName: z.string().min(2).max(120).optional(), description: z.string().max(4000).optional(), projectType: projectType.default("web_app"), objective: z.string().min(8).max(8000), viewMode: z.enum(["simple", "developer"]).default("simple") })).mutation(async ({ ctx, input }) => {
+    create: protectedProcedure.input(z.object({ projectId: z.number().int().positive().optional(), projectName: z.string().min(2).max(120).optional(), description: z.string().max(4000).optional(), projectType: projectType.default("web_app"), objective: z.string().min(1).max(8000), viewMode: z.enum(["simple", "developer"]).default("simple"), executionMode: z.enum(["chat", "plan", "build", "build_more"]).default("build") })).mutation(async ({ ctx, input }) => {
+      const modePolicy = executionModePolicy(input.executionMode);
+      if (modePolicy.requiresProject && !input.projectId) throw new Error(`${input.executionMode === "build_more" ? "Build More" : input.executionMode === "plan" ? "Plan" : "Chat"} requires an existing project workspace.`);
       const project = input.projectId ? await getProjectForOwner(ctx.user.id, input.projectId) : await createProject(ctx.user.id, { name: input.projectName ?? "Untitled workspace", description: input.description ?? input.objective, projectType: input.projectType });
       if (!project) throw new Error("Project not found");
-      const task = await createTask({ projectId: project.id, ownerId: ctx.user.id, objective: input.objective, viewMode: input.viewMode });
+      if (modePolicy.requiresImplementation) {
+        const inventory = await inspectWorkspace(project.id);
+        if (!inventory.files.some(file => file.kind === "file" && !file.path.startsWith(".voh/"))) throw new Error("Build More requires an existing implementation. Start a Build first, then extend it.");
+      }
+      const task = await createTask({ projectId: project.id, ownerId: ctx.user.id, objective: input.objective, viewMode: input.viewMode, executionMode: input.executionMode });
       await updateProjectTask(project.id, ctx.user.id, task.id);
       startTask(task.id, ctx.user.id);
       return { project, task };
     }),
+    approvePlan: protectedProcedure.input(z.object({ taskId: z.number().int().positive(), approvedPlan: z.string().min(1).max(12000) })).mutation(async ({ ctx, input }) => {
+      const task = await getTaskForOwner(ctx.user.id, input.taskId);
+      if (!task) throw new Error("Task not found");
+      if (task.executionMode !== "plan" || task.status !== "waiting" || !task.planContent) throw new Error("This task has no plan waiting for approval");
+      const approved = await approveTaskPlan({ taskId: task.id, ownerId: ctx.user.id, approvedPlan: input.approvedPlan.trim() });
+      if (!approved) throw new Error("This plan was already approved or is no longer waiting. Refresh the task before trying again.");
+      await appendTaskEvent({ taskId: task.id, eventType: "approval.granted", actor: "operator", phase: "plan", severity: "success", summary: "The user approved the current plan; the approved version was passed to the build engine." });
+      startTask(task.id, ctx.user.id);
+      return { success: true };
+    }),
     cancel: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const task = await getTaskForOwner(ctx.user.id, input.taskId);
       if (!task) throw new Error("Task not found");
+      if (["completed", "failed", "cancelled"].includes(task.status)) throw new Error("Only a nonterminal task can be cancelled");
       await updateTask(task.id, { status: "cancelled", currentPhase: "failed", completedAt: new Date(), finalSummary: "Cancelled by the operator before completion." });
+      cancelTaskExecution(task.id);
+      await appendTaskEvent({ taskId: task.id, eventType: "task.cancelled", actor: "operator", phase: task.currentPhase, severity: "warning", summary: "Cancellation requested; active workspace commands receive a termination signal where supported." });
       return { success: true };
     }),
     retry: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -126,6 +155,7 @@ export const appRouter = router({
     pause: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); if (!["queued", "planning", "running", "waiting", "testing", "debugging"].includes(task.status)) throw new Error("Only an active task can be paused"); await updateTask(task.id, { status: "paused", finalSummary: "Paused by the operator; workspace and checkpoint remain available." }); return { success: true }; }),
     resume: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); if (task.status !== "paused") throw new Error("Task is not paused"); await updateTask(task.id, { status: "queued", finalSummary: null }); startTask(task.id, ctx.user.id); return { success: true }; }),
     queueInstruction: protectedProcedure.input(z.object({ taskId: z.number().int().positive(), instruction: z.string().min(4).max(4000) })).mutation(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); if (["completed", "failed", "cancelled"].includes(task.status)) throw new Error("Instructions can only be queued while a task is active"); const queued = await queueTaskInstruction({ projectId: task.projectId, taskId: task.id, ownerId: ctx.user.id, instruction: input.instruction }); await appendTaskEvent({ taskId: task.id, eventType: "instruction.queued", actor: "operator", phase: task.currentPhase, severity: "info", summary: "Queued a follow-up instruction without interrupting the active run.", metadata: { instructionId: queued.id } }); return queued; }),
+    cancelInstruction: protectedProcedure.input(z.object({ taskId: z.number().int().positive(), instructionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); const instruction = (await listQueuedInstructions(task.projectId, task.id)).find(item => item.id === input.instructionId); if (!instruction) throw new Error("Queued instruction not found"); await markInstruction({ id: instruction.id, status: "cancelled" }); await appendTaskEvent({ taskId: task.id, eventType: "instruction.cancelled", actor: "operator", phase: task.currentPhase, severity: "info", summary: "Removed a queued follow-up before it started.", metadata: { instructionId: instruction.id } }); return { success: true }; }),
     queuedInstructions: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), taskId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => { if (!await getProjectForOwner(ctx.user.id, input.projectId)) throw new Error("Project not found"); return listQueuedInstructions(input.projectId, input.taskId); }),
     events: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).query(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); return listTaskEvents(input.taskId); }),
     steps: protectedProcedure.input(z.object({ taskId: z.number().int().positive() })).query(async ({ ctx, input }) => { const task = await getTaskForOwner(ctx.user.id, input.taskId); if (!task) throw new Error("Task not found"); return listTaskSteps(input.taskId); }),

@@ -1,11 +1,11 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db";
 import { agentRuns, taskErrors, taskEvents, taskInstructions, taskSteps, tasks, toolCalls, verificationRuns } from "../../drizzle/schema";
 
-export async function createTask(input: { projectId: number; ownerId: number; objective: string; viewMode: "simple" | "developer" }) {
+export async function createTask(input: { projectId: number; ownerId: number; objective: string; viewMode: "simple" | "developer"; executionMode?: "chat" | "plan" | "build" | "build_more" }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const result = await db.insert(tasks).values({ projectId: input.projectId, ownerId: input.ownerId, objective: input.objective.trim(), userRequest: input.objective.trim(), viewMode: input.viewMode });
+  const result = await db.insert(tasks).values({ projectId: input.projectId, ownerId: input.ownerId, objective: input.objective.trim(), userRequest: input.objective.trim(), viewMode: input.viewMode, executionMode: input.executionMode ?? "build" });
   const id = Number((result as unknown as { insertId: number }).insertId);
   const rows = await db.select().from(tasks).where(and(eq(tasks.id, id), eq(tasks.ownerId, input.ownerId))).limit(1);
   return rows[0];
@@ -28,6 +28,13 @@ export async function updateTask(taskId: number, values: Partial<typeof tasks.$i
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await db.update(tasks).set(values).where(eq(tasks.id, taskId));
+}
+
+export async function approveTaskPlan(input: { taskId: number; ownerId: number; approvedPlan: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.update(tasks).set({ approvedPlan: input.approvedPlan, status: "queued", finalSummary: null, completedAt: null }).where(and(eq(tasks.id, input.taskId), eq(tasks.ownerId, input.ownerId), eq(tasks.executionMode, "plan"), eq(tasks.status, "waiting"), isNull(tasks.approvedPlan)));
+  return Number((result as unknown as { affectedRows: number }).affectedRows) === 1;
 }
 
 export async function isTaskCancelled(taskId: number) {
@@ -71,7 +78,7 @@ export async function appendTaskEvent(input: { taskId: number; eventType: string
 export async function listTaskEvents(taskId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(taskEvents).where(eq(taskEvents.taskId, taskId)).orderBy(desc(taskEvents.createdAt));
+  return db.select().from(taskEvents).where(eq(taskEvents.taskId, taskId)).orderBy(desc(taskEvents.createdAt), desc(taskEvents.id));
 }
 
 export async function recordAgentRun(input: typeof agentRuns.$inferInsert) {
@@ -88,14 +95,21 @@ export async function listAgentRuns(taskId: number) {
 
 export async function recordToolCall(input: typeof toolCalls.$inferInsert) {
   const db = await getDb();
-  if (!db) return;
-  await db.insert(toolCalls).values(input);
+  if (!db) return undefined;
+  const result = await db.insert(toolCalls).values(input);
+  return Number((result as unknown as { insertId: number }).insertId);
+}
+
+export async function updateToolCall(toolCallId: number, values: Partial<typeof toolCalls.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(toolCalls).set(values).where(eq(toolCalls.id, toolCallId));
 }
 
 export async function listToolCalls(taskId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(toolCalls).where(eq(toolCalls.taskId, taskId)).orderBy(desc(toolCalls.createdAt));
+  return db.select().from(toolCalls).where(eq(toolCalls.taskId, taskId)).orderBy(desc(toolCalls.createdAt), desc(toolCalls.id));
 }
 
 export async function recordError(input: typeof taskErrors.$inferInsert) {
