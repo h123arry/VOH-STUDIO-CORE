@@ -1,6 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { buildZipArchive, isSafeProjectExportFile } from "./tools/project-export";
+import { buildZipArchive, createWorkspaceZip, isSafeProjectExportFile } from "./tools/project-export";
+import { projectWorkspace } from "./tools/workspace-tools";
 
 describe("project ZIP export", () => {
   it("creates a valid UTF-8 ZIP archive with readable source entries", () => {
@@ -45,5 +48,26 @@ describe("project export secret filtering", () => {
 
   it("allows ordinary project source", () => {
     expect(isSafeProjectExportFile("src/main.js", Buffer.from("export const ready = true;"))).toBe(true);
+  });
+});
+
+describe("workspace project export", () => {
+  it("exports safe source and skips secrets and oversized files", async () => {
+    const projectId = 9_000_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "src"), { recursive: true });
+      await fs.writeFile(path.join(root, "index.html"), "<main>VOH</main>");
+      await fs.writeFile(path.join(root, "src", "main.js"), "export const ready = true;");
+      await fs.writeFile(path.join(root, ".env"), "PRIVATE_TOKEN=do-not-export");
+      await fs.writeFile(path.join(root, "large.bin"), Buffer.alloc(5 * 1024 * 1024 + 1));
+      const result = await createWorkspaceZip(projectId);
+      expect(result.fileCount).toBe(2);
+      expect(result.skippedFiles).toBe(2);
+      expect(result.archive.readUInt32LE(0)).toBe(0x04034b50);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
