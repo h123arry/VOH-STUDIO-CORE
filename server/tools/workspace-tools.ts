@@ -48,7 +48,7 @@ export async function listWorkspaceFiles(projectId: number) {
 export async function readWorkspaceFile(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); const link = await fs.lstat(absolute); if (link.isSymbolicLink()) throw new Error("Symbolic links are not readable in the workspace"); await assertRealInside(workspace, absolute); if (link.size > MAX_FILE_BYTES) throw new Error("File is too large to open in the studio"); return fs.readFile(absolute, "utf8"); }
 export async function readWorkspaceAsset(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); const link = await fs.lstat(absolute); if (link.isSymbolicLink()) throw new Error("Symbolic links are not served in preview"); await assertRealInside(workspace, absolute); if (link.size > 2_000_000) throw new Error("Preview asset exceeds the size limit"); return { path: safe, content: await fs.readFile(absolute), size: link.size }; }
 
-export async function writeWorkspaceFile(projectId: number, relativePath: string, content: string, lastOperation = "write") {
+export async function writeWorkspaceFile(projectId: number, relativePath: string, content: string, lastOperation = "write", createOnly = false) {
   const size = Buffer.byteLength(content, "utf8");
   if (size > MAX_FILE_BYTES) throw new Error("File exceeds the workspace size limit");
 
@@ -77,13 +77,20 @@ export async function writeWorkspaceFile(projectId: number, relativePath: string
   const existing = await fs.lstat(absolute).catch(() => null);
   if (existing?.isSymbolicLink()) throw new Error("Symbolic links cannot be overwritten");
   if (existing && !existing.isFile()) throw new Error("Only regular workspace files can be replaced");
+  if (createOnly && existing) throw new Error("A file already exists at this path");
 
   // Write beside the destination, then rename into place. Readers see either
   // the previous complete file or the new complete file, never a partial save.
   const temporary = path.join(parent, `.voh-write-${crypto.randomUUID()}.tmp`);
   try {
     await fs.writeFile(temporary, content, { encoding: "utf8", flag: "wx", mode: existing ? existing.mode & 0o777 : 0o600 });
-    await fs.rename(temporary, absolute);
+    if (createOnly) {
+      // Hard-link creation is atomic and fails if another writer created the path.
+      await fs.link(temporary, absolute);
+      await fs.rm(temporary, { force: true });
+    } else {
+      await fs.rename(temporary, absolute);
+    }
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
@@ -99,6 +106,10 @@ export async function writeWorkspaceFile(projectId: number, relativePath: string
     lastOperation,
   });
   return { path: safe, size };
+}
+
+export async function createWorkspaceFile(projectId: number, relativePath: string, content = "") {
+  return writeWorkspaceFile(projectId, relativePath, content, "manual-create", true);
 }
 
 export async function inspectWorkspace(projectId: number) { const files = await listWorkspaceFiles(projectId); return { files, hasPackageManifest: Boolean(files.find(file => file.path === "package.json")), summary: `${files.filter(file => file.kind === "file").length} files indexed` }; }
