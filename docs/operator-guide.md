@@ -32,3 +32,7 @@ Workspace previews are served with a restrictive Content Security Policy and a s
 
 The **Mobile** project type currently creates an installable Progressive Web App starter with a web app manifest and app icon. It is not a native Android APK or iOS IPA build. Native packaging, device simulators, and store submission require dedicated mobile build runners and signing credentials.
 
+## Manual workspace editing
+
+Select an indexed source file in the Workspace panel and choose **Edit**. Save writes through the owner-scoped workspace procedure, validates the relative path and file-size limit, creates a recovery snapshot before changing the file, updates the project file index, and clears cached project context. The editor warns before discarding unsaved changes. Files that exceed the editor index limit are not editable in this panel.
+
