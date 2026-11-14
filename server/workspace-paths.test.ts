@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -110,5 +110,37 @@ describe("workspace file deletion", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+
+describe("workspace file rename", () => {
+  it("renames regular files without overwriting an existing destination", async () => {
+    const projectId = 8_500_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await writeWorkspaceFile(projectId, "src/old-name.ts", "export const original = true;");
+      await writeWorkspaceFile(projectId, "src/taken.ts", "keep this file");
+      await expect(renameWorkspaceFile(projectId, "src/old-name.ts", "src/new-name.ts")).resolves.toMatchObject({ path: path.join("src", "new-name.ts"), renamed: true });
+      await expect(fs.readFile(path.join(root, "src", "new-name.ts"), "utf8")).resolves.toBe("export const original = true;");
+      await expect(fs.access(path.join(root, "src", "old-name.ts"))).rejects.toThrow();
+      await expect(renameWorkspaceFile(projectId, "src/new-name.ts", "src/taken.ts")).rejects.toThrow();
+      await expect(fs.readFile(path.join(root, "src", "taken.ts"), "utf8")).resolves.toBe("keep this file");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses to rename symlinks and directories", async () => {
+    const projectId = 8_600_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "folder"), { recursive: true });
+      await fs.writeFile(path.join(root, "target.txt"), "keep");
+      await fs.symlink(path.join(root, "target.txt"), path.join(root, "linked.txt"));
+      await expect(renameWorkspaceFile(projectId, "folder", "folder-new")).rejects.toThrow("Only regular files");
+      await expect(renameWorkspaceFile(projectId, "linked.txt", "renamed.txt")).rejects.toThrow("Symbolic links");
+      await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("keep");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });
