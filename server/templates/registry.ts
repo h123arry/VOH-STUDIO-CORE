@@ -117,6 +117,23 @@ createServer((req, res) => { const file = req.url === '/' ? 'index.html' : req.u
   ];
 };
 
+const mobileFiles = (project: Project, objective: string): TemplateFile[] => {
+  const files = browserFiles(project, objective);
+  return files.map(file => {
+    if (file.path === "index.html") {
+      return { ...file, content: file.content.replace("<title>", '<meta name="theme-color" content="#10101b"><link rel="manifest" href="/manifest.webmanifest"><title>') };
+    }
+    if (file.path === "src/main.js") {
+      return { ...file, content: file.content + "\nif ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/service-worker.js').catch(() => {}); }\n" };
+    }
+    return file;
+  }).concat([
+    { path: "manifest.webmanifest", content: JSON.stringify({ name: project.name, short_name: project.name.slice(0, 12), description: objective.slice(0, 160), start_url: "/", display: "standalone", background_color: "#071016", theme_color: "#10101b", icons: [{ src: "/icons/app.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }] }, null, 2) + "\n" },
+    { path: "icons/app.svg", content: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#10101b"/><path d="M128 128h256v64H192v64h160v64H192v64h192v64H128z" fill="#a78bfa"/></svg>\n' },
+    { path: "service-worker.js", content: "const CACHE = 'voh-app-v1';\nself.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['/','/src/styles.css','/src/main.js']))));\nself.addEventListener('fetch', event => { if (event.request.method !== 'GET') return; event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request))); });\n" },
+  ]);
+};
+
 const apiFiles = (project: Project, objective: string): TemplateFile[] => [
   { path: "package.json", content: packageJson(project.name, { build: "node scripts/check.mjs", test: "node scripts/check.mjs", start: "node src/server.mjs" }) },
   { path: "src/server.mjs", content: `import { createServer } from 'node:http';\nconst service = ${JSON.stringify(project.name)};\nconst objective = ${JSON.stringify(objective)};\ncreateServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ service, objective, status: 'ok' })); }).listen(4173, () => console.log('API listening on 4173'));\n` },
@@ -127,6 +144,7 @@ const apiFiles = (project: Project, objective: string): TemplateFile[] => [
 const templates: ProjectTemplate[] = [
   { kind: "website", name: "Static website", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
   { kind: "web_app", name: "Browser application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
+  { kind: "mobile", name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser", buildCommand: "pnpm build", testCommand: "pnpm test", files: mobileFiles },
   { kind: "game", name: "2D browser game", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: gameFiles },
   { kind: "dashboard", name: "Dashboard", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
   { kind: "saas", name: "SaaS application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
