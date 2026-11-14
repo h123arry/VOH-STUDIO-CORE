@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -101,11 +102,16 @@ export const appRouter = router({
       if (!project) throw new Error("Project not found");
       return { path: input.path, content: await readWorkspaceFile(input.projectId, input.path) };
     }),
-    writeFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(255), content: z.string().max(60_000) })).mutation(async ({ ctx, input }) => {
+    writeFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(255), content: z.string().max(60_000), expectedContentHash: z.string().regex(/^[a-f0-9]{64}$/) })).mutation(async ({ ctx, input }) => {
       const project = await getProjectForOwner(ctx.user.id, input.projectId);
       if (!project) throw new Error("Project not found");
       const safePath = normalizeWorkspacePath(input.path);
       if (Buffer.byteLength(input.content, "utf8") > 60_000) throw new Error("File exceeds the workspace size limit");
+      const currentContent = await readWorkspaceFile(input.projectId, safePath);
+      const currentHash = createHash("sha256").update(currentContent).digest("hex");
+      if (currentHash !== input.expectedContentHash) {
+        throw new Error("This file changed after you opened it. Refresh the workspace and review the latest version before saving.");
+      }
       await createProjectSnapshot({ projectId: input.projectId, reason: `Before manual editor save: ${safePath}`.slice(0, 160) });
       const result = await writeWorkspaceFile(input.projectId, safePath, input.content, "manual-editor");
       clearProjectContext(input.projectId);
