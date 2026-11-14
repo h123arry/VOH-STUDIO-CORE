@@ -10,6 +10,7 @@ describe("workspace preview isolation", () => {
     ["assets/image.webp", "image/webp"],
     ["assets/font.woff2", "font/woff2"],
     ["assets/app.wasm", "application/wasm"],
+    ["manifest.webmanifest", "application/manifest+json; charset=utf-8"],
     ["unknown.bin", "application/octet-stream"],
   ])("returns a safe content type for %s", (path, expected) => {
     expect(previewContentType(path)).toBe(expected);
