@@ -14,6 +14,7 @@ import { classifyFailure, recoverySummary } from "./recovery";
 import { buildExecutionPlan, executionProfile } from "./planning-engine";
 import { clearProjectContext, retrieveProjectContext } from "../context/context-engine";
 import { scoreTask } from "../quality/quality-engine";
+import { verifyWorkspaceStatically } from "../quality/static-verification";
 import { engineeringBrief } from "../intelligence/engineering-intelligence";
 import { executionModePolicy } from "../domain/execution-mode";
 
@@ -239,6 +240,40 @@ export async function runTask(taskId: number, ownerId: number) {
     const inspection = await inspectWorkspace(project.id);
     await appendTaskEvent({ taskId, eventType: "workspace.inspected", actor: "architect", phase: "inspect", summary: inspection.summary, metadata: { files: inspection.files.slice(0, 60), runtime: template.runtime } });
     await recordVerification({ taskId, kind: "workspace", command: "filesystem inspection", status: "passed", output: inspection.summary, artifact: ".voh/project.json", durationMs: 8 });
+
+    if (process.env.NODE_ENV === "production") {
+      await setProgress(task.id, 40, "inspect", "qa");
+      const staticResult = await verifyWorkspaceStatically(project.id);
+      await recordVerification({ taskId, kind: "static", command: "non-executing source validation", status: staticResult.status, output: staticResult.output, durationMs: staticResult.durationMs });
+      await recordVerification({ taskId, kind: "dependencies", command: "pnpm install --lockfile=false", status: "skipped", output: "Dependency installation was not run because production has no isolated project execution runtime." });
+      await recordVerification({ taskId, kind: "build", command: template.buildCommand, status: "skipped", output: "Build was not run. Project code must only execute inside a dedicated isolated runtime." });
+      await recordVerification({ taskId, kind: "test", command: template.testCommand, status: "skipped", output: "Tests were not run. Project code must only execute inside a dedicated isolated runtime." });
+      await appendTaskEvent({ taskId, eventType: "verification.skipped", actor: "qa", phase: "inspect", severity: "warning", summary: "Production build, dependency installation, and tests were skipped because no isolated project execution runtime is configured.", metadata: { buildCommand: template.buildCommand, testCommand: template.testCommand } });
+
+      if (staticResult.status === "failed") {
+        const failureClass = classifyFailure(staticResult.output);
+        await recordError({ taskId, source: "static-verification", failureClass, diagnostic: staticResult.output.slice(-4000), retryable: 0, resolution: "Review the reported source, JSON, or stylesheet syntax errors and regenerate or edit the affected files." });
+        await appendTaskEvent({ taskId, eventType: "verification.failed", actor: "qa", phase: "inspect", severity: "error", summary: "Non-executing static source validation found errors.", metadata: { output: staticResult.output } });
+        await updateTask(task.id, { status: "failed", currentPhase: "failed", progress: 100, activeAgent: "qa", completedAt: new Date(), finalSummary: `Source generation completed, but static validation failed: ${staticResult.output.slice(0, 1200)}`, failureClass });
+        return;
+      }
+
+      const quality = await scoreTask({ taskId, projectId: project.id, buildPassed: false, testsPassed: false, retries: task.retryCount });
+      await assertTaskActive(taskId);
+      const summary = `Generated the ${template.name} workspace and passed non-executing static validation. Production build and tests were skipped because an isolated execution runtime is not configured; this project is not runtime-verified. Quality score: ${quality.total}/100.`;
+      await appendTaskEvent({ taskId, eventType: "quality.evaluated", actor: "qa", phase: "inspect", severity: "warning", summary: `Static-only quality score ${quality.total}/${quality.threshold}; build and test evidence is unavailable.`, metadata: { ...quality, runtimeVerified: false } });
+      await appendTaskEvent({ taskId, eventType: "result.assembled", actor: "documentation", phase: "inspect", severity: "warning", summary: "Assembled generated source artifacts and static validation evidence; runtime verification was explicitly skipped." });
+      await updateTask(task.id, { status: "completed", currentPhase: "complete", progress: 100, activeAgent: "orchestrator", completedAt: new Date(), finalSummary: summary });
+      await appendTaskEvent({ taskId, eventType: "task.completed", actor: "orchestrator", phase: "complete", severity: "warning", summary: "Source generation and static validation completed. Runtime build and tests remain unverified until an isolated executor is available." });
+      await drainQueuedInstruction(project.id, ownerId);
+      const db = await getDb();
+      const steps = db ? await db.select().from(taskSteps).where(eq(taskSteps.taskId, taskId)).orderBy(taskSteps.orderIndex) : [];
+      for (const step of steps) {
+        const skipped = ["build", "test", "run"].includes(step.phase);
+        await updateStep(step.id, { status: skipped ? "skipped" : "completed", startedAt: step.startedAt ?? new Date(), completedAt: new Date(), outputSummary: skipped ? "Skipped: production project execution requires a separate isolated runtime." : "Completed with generated artifacts or static validation evidence." });
+      }
+      return;
+    }
 
     await setProgress(task.id, 40, "build", "devops");
     await appendTaskEvent({ taskId, eventType: "command.started", actor: "devops", phase: "run", summary: "Started the workspace dependency preflight." });
