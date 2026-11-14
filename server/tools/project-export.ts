@@ -9,6 +9,10 @@ const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const sensitivePath = /(^|\/)(\.env(?:\.|$)|.*\.(pem|key|p12|pfx)|id_rsa|credentials(?:\.json)?)(\/|$)/i;
 const sensitiveText = /(AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|password\s*[:=]\s*["'][^"']+["'])/i;
+export function isSafeProjectExportFile(filePath: string, content: Buffer) {
+  if (sensitivePath.test(filePath)) return false;
+  return !sensitiveText.test(content.toString("utf8"));
+}
 
 const crcTable = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
@@ -108,7 +112,7 @@ export async function createWorkspaceZip(projectId: number) {
     if (real !== root && !real.startsWith(root + path.sep)) throw new Error("Project export resolved outside its workspace");
     const content = await fs.readFile(real);
     const portablePath = safe.split(path.sep).join("/");
-    if (sensitivePath.test(portablePath) || sensitiveText.test(content.toString("utf8"))) {
+    if (!isSafeProjectExportFile(portablePath, content)) {
       skippedFiles++;
       continue;
     }
