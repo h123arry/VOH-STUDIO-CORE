@@ -31,7 +31,8 @@ export function buildZipArchive(entries: Array<{ path: string; content: Buffer }
   let totalBytes = 0;
 
   for (const entry of entries) {
-    const name = Buffer.from(entry.path.replace(/\\/g, "/"), "utf8");
+    const safePath = normalizeWorkspacePath(entry.path);
+    const name = Buffer.from(safePath.split(path.sep).join("/"), "utf8");
     if (!name.length || name.length > 0xffff) throw new Error("Archive contains an invalid file path");
     totalBytes += entry.content.length;
     if (totalBytes > MAX_ARCHIVE_BYTES) throw new Error("Project export exceeds the 25 MB archive limit");
