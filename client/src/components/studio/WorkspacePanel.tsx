@@ -66,7 +66,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   };
   const save = () => {
     if (!detail?.project || !selected || !editing) return;
-    saveFile.mutate({ projectId: detail.project.id, path: selected.path, content: draft });
+    saveFile.mutate({ projectId: detail.project.id, path: selected.path, content: draft, expectedContentHash: selected.contentHash });
   };
 
   return <section className="overflow-hidden rounded-xl border border-[#303238] bg-[#111216]">
