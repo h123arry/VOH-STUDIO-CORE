@@ -2,8 +2,8 @@ import { AlertCircle, CheckCircle2, CircleDashed, LoaderCircle, ShieldCheck } fr
 import { trpc } from "@/lib/trpc";
 
 const availableNow = [
-  "Browser websites and web apps",
-  "2D browser games",
+  "Browser website and web-app source generation",
+  "2D browser-game source generation",
   "Mobile PWA starters",
   "Public Git repository import",
   "Manual source editing and recovery",
@@ -11,7 +11,7 @@ const availableNow = [
 ];
 const infrastructureNeeded = [
   "Native Android and iOS builds",
-  "Isolated backend execution",
+  "Isolated project build, test, and terminal execution",
   "Live external deployment providers",
 ];
 
@@ -28,7 +28,7 @@ export default function StudioReadinessPanel() {
         <p className="mt-1 text-sm text-[#ddd]">Environment checks and honest capability boundaries</p>
       </div>
       {readiness.isLoading ? <span className="flex items-center gap-2 text-xs text-[#888]"><LoaderCircle size={13} className="animate-spin" /> Checking environment</span> :
-        readiness.data?.ready ? <span className="flex items-center gap-2 text-xs text-[#9bd9c5]"><CheckCircle2 size={14} /> Ready for AI builds</span> :
+        readiness.data?.ready ? <span className="flex items-center gap-2 text-xs text-[#9bd9c5]"><CheckCircle2 size={14} /> Workspace services ready</span> :
         <span className="flex items-center gap-2 text-xs text-[#e4c68a]"><AlertCircle size={14} /> Setup required</span>}
     </div>
     {readiness.error && <p role="alert" className="mt-3 text-xs text-[#e4a0a0]">{readiness.error.message}</p>}
