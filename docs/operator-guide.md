@@ -37,4 +37,6 @@ The **Mobile** project type currently creates an installable Progressive Web App
 Select an indexed source file in the Workspace panel and choose **Edit**. Save writes through the owner-scoped workspace procedure, validates the relative path and file-size limit, creates a recovery snapshot before changing the file, updates the project file index, and clears cached project context. The editor warns before discarding unsaved changes. Files that exceed the editor index limit are not editable in this panel.
 
 The Workspace panel also reads the on-disk file inventory. Files excluded from the bounded editor index remain visible in a separate **Not indexed** group with their size and a read-only explanation; the panel does not silently hide large or credential-bearing files.
+## Export a project
 
+Use **Export ZIP** in the Workspace panel to download the current project source. The export is owner-authenticated, excludes `.git`, `node_modules`, environment files, private-key files, and content matching known credential patterns, and omits individual files larger than 5 MB. Exports are bounded to 500 files and 25 MB uncompressed; a project that exceeds the archive limits must be reduced before export.
