@@ -69,10 +69,17 @@ export async function verifyWorkspaceStatically(projectId: number): Promise<Stat
     }
 
     sourceFiles += 1;
-    const scriptKind = extension === ".tsx" ? ts.ScriptKind.TSX : extension === ".jsx" ? ts.ScriptKind.JSX : extension === ".ts" ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-    const source = ts.createSourceFile(file.path, content, ts.ScriptTarget.Latest, true, scriptKind);
-    for (const diagnostic of source.parseDiagnostics) {
-      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+    const transpiled = ts.transpileModule(content, {
+      fileName: file.path,
+      reportDiagnostics: true,
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+    });
+    for (const diagnostic of transpiled.diagnostics ?? []) {
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\\n");
       errors.push(`${file.path}: syntax error: ${message}`);
     }
   }
