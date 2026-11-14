@@ -277,11 +277,14 @@ export async function snapshotWorkspace(projectId: number, snapshotId: string) {
       if (realSource !== workspace && !realSource.startsWith(`${workspace}${path.sep}`)) {
         throw new Error("Snapshot source resolves outside the project workspace");
       }
-      copiedBytes += sourceStat.size;
-      if (copiedBytes > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
+      if (copiedBytes + sourceStat.size > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
       const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
       const target = path.join(targetParent, path.basename(file.path));
       await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
+      const copiedStat = await fs.lstat(target);
+      if (copiedStat.isSymbolicLink() || !copiedStat.isFile()) throw new Error("Snapshot destination must be a regular file");
+      copiedBytes += copiedStat.size;
+      if (copiedBytes > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
     }
   } catch (error) {
     await fs.rm(snapshotRoot, { recursive: true, force: true });
