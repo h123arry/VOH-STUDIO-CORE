@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { deleteProjectFile, upsertProjectFile } from "../domain/project-service";
+import { deleteProjectFile, renameProjectFile, upsertProjectFile } from "../domain/project-service";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(process.env.VOH_WORKSPACE_ROOT ?? path.join(process.cwd(), "workspace-data"));
@@ -110,6 +110,36 @@ export async function writeWorkspaceFile(projectId: number, relativePath: string
 
 export async function createWorkspaceFile(projectId: number, relativePath: string, content = "") {
   return writeWorkspaceFile(projectId, relativePath, content, "manual-create", true);
+}
+
+export async function renameWorkspaceFile(projectId: number, oldRelativePath: string, newRelativePath: string) {
+  const workspace = await ensureWorkspace(projectId);
+  const oldSafe = safePath(oldRelativePath);
+  const newSafe = safePath(newRelativePath);
+  if (oldSafe === newSafe) return { oldPath: oldSafe, path: newSafe, renamed: false };
+  const source = path.join(workspace, oldSafe);
+  const destination = path.join(workspace, newSafe);
+  assertAbsoluteInside(workspace, source);
+  assertAbsoluteInside(workspace, destination);
+  const sourceEntry = await fs.lstat(source);
+  if (sourceEntry.isSymbolicLink()) throw new Error("Symbolic links cannot be renamed through the workspace editor");
+  if (!sourceEntry.isFile()) throw new Error("Only regular files can be renamed through the workspace editor");
+  await assertRealInside(workspace, source);
+  const parentSegments = path.dirname(newSafe).split(path.sep).filter(Boolean);
+  let parent = workspace;
+  for (const segment of parentSegments) {
+    parent = path.join(parent, segment);
+    const entry = await fs.lstat(parent).catch(() => null);
+    if (entry?.isSymbolicLink()) throw new Error("Symbolic links are not allowed in workspace paths");
+    if (entry && !entry.isDirectory()) throw new Error("Workspace parent path is not a directory");
+    if (!entry) await fs.mkdir(parent);
+    const realParent = await fs.realpath(parent);
+    if (realParent !== workspace && !realParent.startsWith(`${workspace}${path.sep}`)) throw new Error("Resolved parent is outside the project workspace");
+  }
+  await fs.link(source, destination);
+  try { await fs.unlink(source); } catch (error) { await fs.unlink(destination).catch(() => undefined); throw error; }
+  await renameProjectFile(projectId, oldSafe, newSafe);
+  return { oldPath: oldSafe, path: newSafe, renamed: true };
 }
 
 export async function deleteWorkspaceFile(projectId: number, relativePath: string) {
