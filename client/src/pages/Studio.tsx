@@ -637,7 +637,7 @@ export default function Studio() {
             </label>
             <label className="form-label">
               Project type
-              <select name="projectType" defaultValue="web_app" disabled={projectTemplates.isLoading || !projectTemplates.data?.length}>
+              <select name="projectType" defaultValue="web_app" disabled={projectTemplates.isLoading}>
                 {projectTemplates.data?.map(template => <option key={template.kind} value={template.kind}>{template.name}</option>)}
                 {!projectTemplates.data?.length && <option value="web_app">Web application</option>}
               </select>
