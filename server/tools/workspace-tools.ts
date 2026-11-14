@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -253,9 +254,15 @@ export async function snapshotWorkspace(projectId: number, snapshotId: string) {
   const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file");
   for (const file of files) {
     const source = path.join(workspace, file.path);
+    const sourceStat = await fs.lstat(source);
+    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error("Snapshot source must be a regular file");
+    const realSource = await fs.realpath(source);
+    if (realSource !== workspace && !realSource.startsWith(`${workspace}${path.sep}`)) {
+      throw new Error("Snapshot source resolves outside the project workspace");
+    }
     const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
     const target = path.join(targetParent, path.basename(file.path));
-    await fs.copyFile(source, target);
+    await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
   }
   const storageRoot = await fs.realpath(ROOT);
   return { snapshotPath: path.relative(storageRoot, snapshotRoot), fileCount: files.length };
