@@ -50,7 +50,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
     <div className="grid min-h-[320px] grid-cols-[190px_minmax(0,1fr)]">
       <div className="studio-scroll border-r border-[#182f35] p-3">
         <div className="mb-2 flex items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[.14em] text-[#56706f]"><Folder size={12} /> root</div>
-        {files.length === 0 ? <div className="px-2 py-3 text-xs leading-5 text-[#627c79]">No files recorded yet.</div> : files.map(file => <button key={file.id} onClick={() => onSelect(file.path)} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${selected?.path === file.path ? "bg-[#122f31] text-[#e1f9f0]" : "text-[#78908e] hover:bg-[#10252b] hover:text-[#cde1dc]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
+        {files.length === 0 ? <div className="px-2 py-3 text-xs leading-5 text-[#627c79]">No files recorded yet.</div> : files.map(file => <button key={file.id} onClick={() => { if (editing && draft !== (selected?.content ?? "") && !window.confirm("Discard unsaved changes?")) return; onSelect(file.path); }} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${selected?.path === file.path ? "bg-[#122f31] text-[#e1f9f0]" : "text-[#78908e] hover:bg-[#10252b] hover:text-[#cde1dc]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
       </div>
       <div className="min-w-0 bg-[#071016]">
         {selected ? <>
