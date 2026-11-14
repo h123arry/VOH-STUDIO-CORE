@@ -23,8 +23,9 @@ import { containsSensitiveValue } from "./domain/project-memory";
 describe("VOH core policies", () => {
   it("exposes only bounded tools to QA", () => {
     const qaTools = toolsForAgent("qa").map(tool => tool.name);
-    expect(qaTools).toContain("project.build");
-    expect(qaTools).toContain("project.test");
+    expect(qaTools).not.toContain("project.build");
+    expect(qaTools).not.toContain("project.test");
+    expect(qaTools).toContain("project.inspect");
     expect(qaTools).not.toContain("project.deploy");
   });
   it("keeps production deployment approval-gated", () => {
