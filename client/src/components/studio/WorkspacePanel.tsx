@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle } from "lucide-react";
+import { ExternalLink, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert } from "lucide-react";
 import type { ProjectDetail } from "@/lib/studio-types";
 import { fileLanguage } from "@/lib/studio-types";
 import { trpc } from "@/lib/trpc";
@@ -15,7 +15,17 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   onSelect: (path: string) => void;
 }) {
   const files = detail?.files ?? [];
-  const selected = files.find(file => file.path === selectedPath) ?? files[0];
+  const tree = trpc.workspace.tree.useQuery(
+    { projectId: detail?.project.id ?? 0 },
+    { enabled: Boolean(detail?.project.id), refetchOnWindowFocus: false }
+  );
+  const diskFiles = tree.data?.disk.filter(file => file.kind === "file") ?? [];
+  const unindexedFiles = diskFiles.filter(file => !files.some(indexed => indexed.path === file.path));
+  const selected = selectedPath ? files.find(file => file.path === selectedPath) : files[0];
+  const selectedDisk = selectedPath
+    ? diskFiles.find(file => file.path === selectedPath)
+    : diskFiles.find(file => file.path === selected?.path) ?? diskFiles[0];
+  const activePath = selected?.path ?? selectedDisk?.path;
   const utils = trpc.useUtils();
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
@@ -23,7 +33,10 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   const saveFile = trpc.workspace.writeFile.useMutation({
     onSuccess: async () => {
       setEditing(false);
-      await utils.projects.get.invalidate({ projectId: detail?.project.id ?? 0 });
+      await Promise.all([
+        utils.projects.get.invalidate({ projectId: detail?.project.id ?? 0 }),
+        utils.workspace.tree.invalidate({ projectId: detail?.project.id ?? 0 }),
+      ]);
       setSaved(true);
     },
   });
@@ -32,8 +45,12 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
     setDraft(selected?.content ?? "");
     setEditing(false);
     setSaved(false);
-  }, [selected?.path, selected?.content]);
+  }, [activePath, selected?.content]);
 
+  const selectFile = (path: string) => {
+    if (editing && draft !== (selected?.content ?? "") && !window.confirm("Discard unsaved changes?")) return;
+    onSelect(path);
+  };
   const save = () => {
     if (!detail?.project || !selected || !editing) return;
     saveFile.mutate({ projectId: detail.project.id, path: selected.path, content: draft });
@@ -50,7 +67,12 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
     <div className="grid min-h-[320px] grid-cols-[190px_minmax(0,1fr)]">
       <div className="studio-scroll border-r border-[#182f35] p-3">
         <div className="mb-2 flex items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[.14em] text-[#56706f]"><Folder size={12} /> root</div>
-        {files.length === 0 ? <div className="px-2 py-3 text-xs leading-5 text-[#627c79]">No files recorded yet.</div> : files.map(file => <button key={file.id} onClick={() => { if (editing && draft !== (selected?.content ?? "") && !window.confirm("Discard unsaved changes?")) return; onSelect(file.path); }} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${selected?.path === file.path ? "bg-[#122f31] text-[#e1f9f0]" : "text-[#78908e] hover:bg-[#10252b] hover:text-[#cde1dc]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
+        {files.map(file => <button key={file.id} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#122f31] text-[#e1f9f0]" : "text-[#78908e] hover:bg-[#10252b] hover:text-[#cde1dc]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
+        {unindexedFiles.length > 0 && <>
+          <div className="mb-2 mt-4 flex items-center gap-2 border-t border-[#182f35] px-2 pt-3 text-[9px] font-semibold uppercase tracking-[.12em] text-[#6c7773]"><ShieldAlert size={11} /> Not indexed</div>
+          {unindexedFiles.map(file => <button key={file.path} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#2b2920] text-[#f2e3b8]" : "text-[#8c8774] hover:bg-[#22221d]"}`}><FileText size={13} /><span className="min-w-0 flex-1 truncate">{file.path}</span><span className="shrink-0 font-mono text-[9px]">{file.size > 60_000 ? "large" : "protected"}</span></button>)}
+        </>}
+        {files.length === 0 && unindexedFiles.length === 0 && <div className="px-2 py-3 text-xs leading-5 text-[#627c79]">{tree.isLoading ? "Loading workspace files…" : "No files recorded yet."}</div>}
       </div>
       <div className="min-w-0 bg-[#071016]">
         {selected ? <>
@@ -66,7 +88,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
           </div>
           {editing ? <textarea aria-label={`Edit ${selected.path}`} spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} className="studio-scroll min-h-[320px] w-full resize-y bg-[#071016] p-4 font-mono text-[12px] leading-6 text-[#d4e5df] outline-none focus:ring-1 focus:ring-inset focus:ring-[#456e66]" /> : <pre className="studio-scroll max-h-[320px] overflow-auto p-4 text-[12px] leading-6 text-[#9fbab5]">{selected.content ?? "Content is indexed on disk and will be readable through the workspace endpoint."}</pre>}
           {saveFile.error && <p role="alert" className="border-t border-[#472d31] px-4 py-2 text-xs text-[#f0a69c]">{saveFile.error.message}</p>}
-        </> : <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-[#58716f]"><TerminalSquare size={24} /><span className="text-xs">Workspace output will appear here.</span></div>}
+        </> : selectedDisk ? <div className="p-5"><div className="flex items-center gap-2 text-sm text-[#e0d6b6]"><ShieldAlert size={15} /> {selectedDisk.path}</div><p className="mt-3 text-xs leading-6 text-[#8d8876]">This file is present in the project workspace but is not loaded into the editor index. Large files and files that may contain credentials or private material are intentionally excluded. Use the project's own tooling to manage this file.</p><div className="mt-2 font-mono text-[10px] text-[#6e6b5f]">{selectedDisk.size.toLocaleString()} bytes · read-only in Studio</div></div> : <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-[#58716f]"><TerminalSquare size={24} /><span className="text-xs">Workspace output will appear here.</span></div>}
       </div>
     </div>
   </section>;
