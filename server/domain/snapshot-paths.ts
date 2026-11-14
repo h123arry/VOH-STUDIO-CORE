@@ -98,11 +98,11 @@ export async function createSnapshotDirectory(root: string, relativePath: string
 }
 
 export async function ensureSnapshotSubdirectory(root: string, relativePath: string) {
-  if (relativePath === "." || relativePath === "") return root;
-  if (path.isAbsolute(relativePath) || relativePath.includes(String.fromCharCode(0))) {
+  const isRoot = relativePath === "." || relativePath === "";
+  if (!isRoot && (path.isAbsolute(relativePath) || relativePath.includes(String.fromCharCode(0)))) {
     throw new Error("Snapshot directory path is outside storage");
   }
-  const segments = relativePath.split(/[\\/]/);
+  const segments = isRoot ? [] : relativePath.split(/[\\/]/);
   if (segments.some(segment => !segment || segment === "." || segment === "..")) {
     throw new Error("Snapshot directory path is outside storage");
   }
@@ -112,6 +112,7 @@ export async function ensureSnapshotSubdirectory(root: string, relativePath: str
     throw new Error("Snapshot root must be a real directory");
   }
   const realRoot = await fs.realpath(absoluteRoot);
+  if (isRoot) return realRoot;
   let current = absoluteRoot;
   for (const segment of segments) {
     current = path.join(current, segment);
