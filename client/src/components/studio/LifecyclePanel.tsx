@@ -16,7 +16,7 @@ export default function LifecyclePanel({ projectId }: { projectId?: number }) {
       await Promise.all([
         git.refetch(),
         utils.projects.get.invalidate({ projectId: projectId ?? 0 }),
-        utils.repository.map.invalidate({ projectId: projectId ?? 0 }),
+        utils.lifecycle.repository.map.invalidate({ projectId: projectId ?? 0 }),
       ]);
     },
   });
