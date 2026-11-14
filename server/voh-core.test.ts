@@ -28,6 +28,14 @@ describe("VOH core policies", () => {
     expect(qaTools).toContain("project.inspect");
     expect(qaTools).not.toContain("project.deploy");
   });
+  it("does not advertise unavailable host execution as a capability", () => {
+    for (const capability of CAPABILITY_REGISTRY) {
+      expect(capability.tools).not.toContain("project.build");
+      expect(capability.tools).not.toContain("project.test");
+      expect(capability.tools).not.toContain("computer.terminal");
+    }
+    expect(CAPABILITY_REGISTRY.find(item => item.key === "web")?.description).toMatch(/isolated runtime/i);
+  });
   it("keeps production deployment approval-gated", () => {
     expect(TOOL_REGISTRY.find(tool => tool.name === "project.deploy")?.executorStatus).toBe("approval_required");
   });
