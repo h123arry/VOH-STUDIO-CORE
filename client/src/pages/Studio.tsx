@@ -167,6 +167,11 @@ export default function Studio() {
     },
     { enabled: auth.isAuthenticated, refetchOnWindowFocus: false }
   );
+  const projectTemplates = trpc.templates.list.useQuery(undefined, {
+    enabled: auth.isAuthenticated,
+    refetchOnWindowFocus: false,
+    staleTime: 300_000,
+  });
   const taskId =
     selectedTaskId ?? selectedProject?.activeTaskId ?? detail?.tasks[0]?.id;
   const currentRunTaskId =
@@ -269,7 +274,7 @@ export default function Studio() {
     projectCreate.mutate({
       name: String(form.get("name") ?? "").trim(),
       description: String(form.get("description") ?? "").trim(),
-      projectType: String(form.get("projectType") ?? "web_app") as "web_app",
+      projectType: String(form.get("projectType") ?? "web_app") as Project["projectType"],
     });
   };
   const submitObjective = (
@@ -632,15 +637,11 @@ export default function Studio() {
             </label>
             <label className="form-label">
               Project type
-              <select name="projectType">
-                <option value="web_app">Web application</option>
-                <option value="website">Website</option>
-                <option value="api">API</option>
-                <option value="ai_app">AI application</option>
-                <option value="automation">Automation</option>
-                <option value="dashboard">Dashboard</option>
-                <option value="game">Game</option>
+              <select name="projectType" defaultValue="web_app" disabled={projectTemplates.isLoading || !projectTemplates.data?.length}>
+                {projectTemplates.data?.map(template => <option key={template.kind} value={template.kind}>{template.name}</option>)}
+                {!projectTemplates.data?.length && <option value="web_app">Web application</option>}
               </select>
+              <span className="mt-1 block text-[10px] text-[#777]">Project types are loaded from the active template registry.</span>
             </label>
             <div className="mt-6 flex justify-end gap-2">
               <button
