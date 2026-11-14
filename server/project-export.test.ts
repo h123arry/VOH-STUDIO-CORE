@@ -1,6 +1,6 @@
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { buildZipArchive } from "./project-export";
+import { buildZipArchive, isSafeProjectExportFile } from "./tools/project-export";
 
 describe("project ZIP export", () => {
   it("creates a valid UTF-8 ZIP archive with readable source entries", () => {
@@ -29,5 +29,21 @@ describe("project ZIP export", () => {
     const archive = buildZipArchive([]);
     expect(archive.readUInt32LE(0)).toBe(0x06054b50);
     expect(archive.readUInt16LE(10)).toBe(0);
+  });
+});
+
+describe("project export secret filtering", () => {
+  it("excludes environment files and private key paths", () => {
+    expect(isSafeProjectExportFile(".env", Buffer.from("APP_ENV=production"))).toBe(false);
+    expect(isSafeProjectExportFile("certs/private.pem", Buffer.from("not a key"))).toBe(false);
+  });
+
+  it("excludes likely credentials in source content", () => {
+    expect(isSafeProjectExportFile("src/config.ts", Buffer.from('const password = "example-secret";'))).toBe(false);
+    expect(isSafeProjectExportFile("src/config.ts", Buffer.from("-----BEGIN PRIVATE KEY-----"))).toBe(false);
+  });
+
+  it("allows ordinary project source", () => {
+    expect(isSafeProjectExportFile("src/main.js", Buffer.from("export const ready = true;"))).toBe(true);
   });
 });
