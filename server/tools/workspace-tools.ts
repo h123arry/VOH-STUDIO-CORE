@@ -49,7 +49,7 @@ export async function ensureWorkspace(projectId: number) {
   if (workspaceStat.isSymbolicLink() || !workspaceStat.isDirectory()) throw new Error("Project workspace must be a real directory, not a symbolic link");
   const realWorkspace = await fs.realpath(workspace);
   if (realWorkspace !== path.join(realRoot, `project-${projectId}`)) throw new Error("Project workspace resolves outside the configured workspace root");
-  return workspace;
+  return realWorkspace;
 }
 
 export async function listWorkspaceFiles(projectId: number) {
