@@ -12,12 +12,12 @@ const SAFE_SCRIPT = /^(node|pnpm|vite|tsc|echo)\s+[A-Za-z0-9_./:@=-]+(?:\s+[A-Za
 const SAFE_GIT = /^(status|diff|log(?:\s+--oneline)?|rev-parse(?:\s+HEAD)?)$/;
 
 export function normalizeWorkspacePath(relativePath: string) {
-  if (typeof relativePath !== "string" || relativePath.length === 0 || relativePath.includes("\\0")) {
+  if (typeof relativePath !== "string" || relativePath.length === 0 || relativePath.includes(String.fromCharCode(0))) {
     throw new Error("Path is outside the project workspace");
   }
   // Treat both slash styles as separators so a path cannot become traversal
   // when a workspace is moved between POSIX and Windows hosts.
-  const portable = relativePath.replace(/\\\\/g, "/");
+  const portable = relativePath.replace(/\\/g, "/");
   if (portable.startsWith("/") || /^[a-zA-Z]:/.test(portable) || portable.startsWith("//")) {
     throw new Error("Path is outside the project workspace");
   }
