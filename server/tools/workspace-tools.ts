@@ -59,7 +59,7 @@ export async function writeWorkspaceFile(projectId: number, relativePath: string
 
   // Walk each parent component instead of trusting recursive mkdir/realpath.
   // This rejects symlinked directories even when they point elsewhere inside
-  // the workspace, keeping writes predictable and preventing link swaps.
+  // the workspace, keeping writes predictable and preventing workspace paths from traversing symlinked directories.
   const parentSegments = path.dirname(safe).split(path.sep).filter(Boolean);
   let parent = workspace;
   for (const segment of parentSegments) {
