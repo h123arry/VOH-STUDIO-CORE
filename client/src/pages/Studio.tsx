@@ -29,6 +29,7 @@ import ProjectMemoryPanel from "@/components/studio/ProjectMemoryPanel";
 import EvolutionPulse from "@/components/studio/EvolutionPulse";
 import LifecyclePanel from "@/components/studio/LifecyclePanel";
 import ProductIntelligencePanel from "@/components/studio/ProductIntelligencePanel";
+import StudioReadinessPanel from "@/components/studio/StudioReadinessPanel";
 import type { ExecutionMode, Project, TemplateKind } from "@/lib/studio-types";
 import { statusTone, taskActivity } from "@/lib/studio-types";
 
@@ -545,6 +546,7 @@ export default function Studio() {
             )}
             {showDetails && (
               <div className="advanced-space">
+                <StudioReadinessPanel />
                 <ProductIntelligencePanel
                   projectId={selectedProject?.id}
                   objective={selectedProject?.description}
