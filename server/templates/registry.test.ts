@@ -22,9 +22,11 @@ describe("mobile starter template", () => {
     const files = template!.files(project, "A mobile planner");
     const manifestFile = files.find(file => file.path === "manifest.webmanifest");
     expect(manifestFile).toBeDefined();
-    expect(JSON.parse(manifestFile!.content)).toMatchObject({ name: "Pocket Planner", display: "standalone", start_url: "/" });
+    expect(JSON.parse(manifestFile!.content)).toMatchObject({ name: "Pocket Planner", display: "standalone", start_url: "./", scope: "./" });
     expect(files.find(file => file.path === "index.html")?.content).toContain('rel="manifest"');
     expect(files.some(file => file.path === "icons/app.svg")).toBe(true);
     expect(files.some(file => file.path === "service-worker.js")).toBe(false);
+    expect(files.find(file => file.path === "scripts/build.mjs")?.content).toContain("dist/manifest.webmanifest");
+    expect(files.find(file => file.path === "scripts/test.mjs")?.content).toContain("Mobile PWA smoke test passed");
   });
 });
