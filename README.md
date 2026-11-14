@@ -7,6 +7,7 @@ VOH STUDIO is a persistent AI development workspace for planning, creating, insp
 ## What is available in the current build
 
 - Prompt-driven project creation and iterative Build More workflows.
+- Inline source editing with snapshot-backed saves and unsaved-change protection.
 - Executable browser website, web app, and 2D game starters with build and smoke-test scripts.
 - An installable mobile web app (PWA) starter with a web manifest, icon, build output, and tests. This is not native Android/iOS packaging.
 - Public HTTPS repository import from GitHub, GitLab, and Bitbucket into an empty project workspace.
