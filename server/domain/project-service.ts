@@ -60,6 +60,6 @@ export async function listProjectFiles(projectId: number) {
 
 export async function deleteProjectFile(projectId: number, filePath: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database is not available");
+  if (!db) return;
   await db.delete(projectFiles).where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)));
 }
