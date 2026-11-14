@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { normalizeWorkspacePath, projectWorkspace, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, normalizeWorkspacePath, projectWorkspace, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -60,6 +60,22 @@ describe("atomic workspace file writes", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
       await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("workspace file creation", () => {
+  it("creates a new file without replacing an existing file", async () => {
+    const projectId = 8_200_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await expect(createWorkspaceFile(projectId, "src/new.ts", "export const created = true;")).resolves.toMatchObject({ path: path.join("src", "new.ts") });
+      await expect(createWorkspaceFile(projectId, "src/new.ts", "replacement")).rejects.toThrow("A file already exists");
+      await expect(fs.readFile(path.join(root, "src", "new.ts"), "utf8")).resolves.toBe("export const created = true;");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
     }
   });
 });
