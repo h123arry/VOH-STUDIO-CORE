@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert, Plus, Check, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Download, Search, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert, Plus, Check, RefreshCw, Trash2 } from "lucide-react";
 import type { ProjectDetail } from "@/lib/studio-types";
 import { fileLanguage } from "@/lib/studio-types";
 import { trpc } from "@/lib/trpc";
@@ -32,6 +32,10 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   const [saved, setSaved] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
+  const [fileQuery, setFileQuery] = useState("");
+  const normalizedFileQuery = fileQuery.trim().toLowerCase();
+  const visibleFiles = files.filter(file => !normalizedFileQuery || file.path.toLowerCase().includes(normalizedFileQuery));
+  const visibleUnindexedFiles = unindexedFiles.filter(file => !normalizedFileQuery || file.path.toLowerCase().includes(normalizedFileQuery));
   const saveFile = trpc.workspace.writeFile.useMutation({
     onSuccess: async () => {
       setEditing(false);
@@ -103,6 +107,11 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
       <div className="studio-scroll border-r border-[#292b31] p-3">
         <div className="mb-2 flex items-center justify-between px-2"><div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.14em] text-[#858891]"><Folder size={12} /> root</div><button type="button" onClick={() => { void tree.refetch(); void utils.projects.get.invalidate({ projectId: detail?.project.id ?? 0 }); }} disabled={tree.isFetching || !detail?.project} aria-label="Refresh workspace files" title="Refresh workspace files" className="rounded p-1 text-[#858891] hover:bg-[#202228] hover:text-[#f3f4f6] disabled:opacity-40"><RefreshCw size={12} className={tree.isFetching ? "animate-spin" : ""} /></button></div>
         <button type="button" onClick={() => { setCreating(value => !value); createFile.reset(); }} disabled={!detail?.project || createFile.isPending || saveFile.isPending} className="mb-2 flex w-full items-center gap-2 rounded border border-dashed border-[#3a3d45] px-2 py-2 text-left text-[10px] text-[#c4c7ce] hover:bg-[#202228]"><Plus size={12} /> New file</button>
+        <div className="mb-3 flex items-center gap-2 rounded border border-[#303238] bg-[#0b0c0f] px-2 py-2 text-[#858891]">
+          <Search size={12} />
+          <input aria-label="Search workspace files" value={fileQuery} onChange={event => setFileQuery(event.target.value)} placeholder="Find a file…" className="min-w-0 w-full bg-transparent text-[10px] text-[#e5e7eb] outline-none placeholder:text-[#666a73]" />
+          {fileQuery && <button type="button" aria-label="Clear file search" onClick={() => setFileQuery("")} className="text-[10px] text-[#858891] hover:text-[#f3f4f6]">Clear</button>}
+        </div>
         {creating && <form onSubmit={event => { event.preventDefault(); if (!detail?.project || !newFilePath.trim()) return; createFile.mutate({ projectId: detail.project.id, path: newFilePath.trim(), content: "" }); }} className="mb-3 space-y-2 rounded border border-[#3a3d45] bg-[#111216] p-2">
           <input autoFocus aria-label="New file path" value={newFilePath} onChange={event => setNewFilePath(event.target.value)} placeholder="src/new-file.ts" className="w-full rounded border border-[#3a3d45] bg-[#0b0c0f] px-2 py-2 font-mono text-[10px] text-[#e5e7eb] outline-none focus:border-[#e5e7eb]" />
           <div className="flex gap-2">
@@ -111,12 +120,12 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
           </div>
           {createFile.error && <p role="alert" className="text-[10px] leading-4 text-[#f0a69c]">{createFile.error.message}</p>}
         </form>}
-        {files.map(file => <button key={file.id} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#292c33] text-[#ffffff]" : "text-[#a1a1aa] hover:bg-[#202228] hover:text-[#e5e7eb]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
-        {unindexedFiles.length > 0 && <>
+        {visibleFiles.map(file => <button key={file.id} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#292c33] text-[#ffffff]" : "text-[#a1a1aa] hover:bg-[#202228] hover:text-[#e5e7eb]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
+        {visibleUnindexedFiles.length > 0 && <>
           <div className="mb-2 mt-4 flex items-center gap-2 border-t border-[#292b31] px-2 pt-3 text-[9px] font-semibold uppercase tracking-[.12em] text-[#858891]"><ShieldAlert size={11} /> Not indexed</div>
-          {unindexedFiles.map(file => <button key={file.path} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#2b2920] text-[#f2e3b8]" : "text-[#a1a1aa] hover:bg-[#22221d]"}`}><FileText size={13} /><span className="min-w-0 flex-1 truncate">{file.path}</span><span className="shrink-0 font-mono text-[9px]">{file.size > 60_000 ? "large" : "protected"}</span></button>)}
+          {visibleUnindexedFiles.map(file => <button key={file.path} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#2b2920] text-[#f2e3b8]" : "text-[#a1a1aa] hover:bg-[#22221d]"}`}><FileText size={13} /><span className="min-w-0 flex-1 truncate">{file.path}</span><span className="shrink-0 font-mono text-[9px]">{file.size > 60_000 ? "large" : "protected"}</span></button>)}
         </>}
-        {files.length === 0 && unindexedFiles.length === 0 && <div className="px-2 py-3 text-xs leading-5 text-[#627c79]">{tree.isLoading ? "Loading workspace files…" : "No files recorded yet."}</div>}
+        {visibleFiles.length === 0 && visibleUnindexedFiles.length === 0 && <div className="px-2 py-3 text-xs leading-5 text-[#858891]">{normalizedFileQuery ? "No files match your search." : tree.isLoading ? "Loading workspace files…" : "No files recorded yet."}</div>}
       </div>
       <div className="min-w-0 bg-[#0b0c0f]">
         {selected ? <>
