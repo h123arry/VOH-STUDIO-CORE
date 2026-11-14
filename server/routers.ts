@@ -6,16 +6,16 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { AGENT_REGISTRY } from "./agents/registry";
 import { createProject, getProjectForOwner, listProjectFiles, listProjects, updateProjectSettings, updateProjectTask } from "./domain/project-service";
 import { buildProjectMemory, containsSensitiveValue } from "./domain/project-memory";
-import { compareProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from "./domain/snapshot-service";
+import { compareProjectSnapshot, createProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from "./domain/snapshot-service";
 import { listArtifacts } from "./domain/artifact-service";
 import { appendTaskEvent, approveTaskPlan, createTask, getTaskForOwner, listAgentRuns, listErrors, listQueuedInstructions, listTaskEvents, listTaskSteps, listTasks, listToolCalls, listVerifications, markInstruction, queueTaskInstruction, updateTask } from "./domain/task-service";
 import { cancelTaskExecution, startTask } from "./orchestrator/orchestrator";
 import { modelRoutes } from "./models/model-router";
-import { inspectWorkspace, readWorkspaceFile, listWorkspaceFiles } from "./tools/workspace-tools";
+import { inspectWorkspace, readWorkspaceFile, writeWorkspaceFile, listWorkspaceFiles } from "./tools/workspace-tools";
 import { TOOL_REGISTRY, toolsForAgent } from "./tools/registry";
 import { listTemplates } from "./templates/registry";
 import { latestQualityScore } from "./quality/quality-engine";
-import { retrieveProjectContext } from "./context/context-engine";
+import { clearProjectContext, retrieveProjectContext } from "./context/context-engine";
 import { CAPABILITY_REGISTRY } from "./capabilities/registry";
 import { runPlanningBenchmarks } from "./benchmark/benchmarks";
 import { SKILL_REGISTRY, skillsForObjective } from "./skills/registry";
@@ -100,6 +100,14 @@ export const appRouter = router({
       const project = await getProjectForOwner(ctx.user.id, input.projectId);
       if (!project) throw new Error("Project not found");
       return { path: input.path, content: await readWorkspaceFile(input.projectId, input.path) };
+    }),
+    writeFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(500), content: z.string().max(60_000) })).mutation(async ({ ctx, input }) => {
+      const project = await getProjectForOwner(ctx.user.id, input.projectId);
+      if (!project) throw new Error("Project not found");
+      await createProjectSnapshot({ projectId: input.projectId, reason: `Before manual editor save: ${input.path}` });
+      const result = await writeWorkspaceFile(input.projectId, input.path, input.content, "manual-editor");
+      clearProjectContext(input.projectId);
+      return { ...result, saved: true };
     }),
   }),
 
