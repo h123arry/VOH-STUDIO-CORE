@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateGitRemote } from "./lifecycle/git-service";
+import { repositoryFileIndexSafety, validateGitRemote } from "./lifecycle/git-service";
 
 describe("public Git repository URL validation", () => {
   it.each([
@@ -23,5 +23,21 @@ describe("public Git repository URL validation", () => {
     "file:///etc/passwd",
   ])("rejects unsafe or unsupported repository URL %s", value => {
     expect(() => validateGitRemote(value)).toThrow();
+  });
+});
+
+describe("repository import indexing safety", () => {
+  it("excludes environment and private-key paths", () => {
+    expect(repositoryFileIndexSafety(".env", "PUBLIC_URL=https://example.com").safe).toBe(false);
+    expect(repositoryFileIndexSafety("certs/server.pem", "not a key").safe).toBe(false);
+  });
+
+  it("excludes files containing credential-like values", () => {
+    expect(repositoryFileIndexSafety("src/config.ts", 'const password = "example-secret";').safe).toBe(false);
+    expect(repositoryFileIndexSafety("src/config.ts", "const apiKey = 'github_pat_abcdefghijklmnop';").safe).toBe(false);
+  });
+
+  it("allows ordinary source files", () => {
+    expect(repositoryFileIndexSafety("src/main.ts", "export const ready = true;")).toMatchObject({ safe: true, reason: null });
   });
 });
