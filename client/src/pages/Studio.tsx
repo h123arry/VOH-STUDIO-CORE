@@ -274,7 +274,7 @@ export default function Studio() {
     projectCreate.mutate({
       name: String(form.get("name") ?? "").trim(),
       description: String(form.get("description") ?? "").trim(),
-      projectType: String(form.get("projectType") ?? "web_app") as Project["projectType"],
+      projectType: String(form.get("projectType") ?? "web_app") as TemplateKind,
     });
   };
   const submitObjective = (
