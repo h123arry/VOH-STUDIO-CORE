@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -199,5 +199,31 @@ describe("production workspace execution boundary", () => {
       vi.unstubAllEnvs();
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+
+describe("project workspace root validation", () => {
+  it("rejects a project directory that is replaced with a symlink", async () => {
+    const projectId = 8_950_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    const outside = path.join(path.dirname(root), `voh-outside-root-${projectId}`);
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+    await fs.mkdir(outside, { recursive: true });
+    await fs.writeFile(path.join(outside, "private.txt"), "outside workspace");
+    try {
+      await fs.symlink(outside, root, "dir");
+      await expect(ensureWorkspace(projectId)).rejects.toThrow("symbolic link");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid project identifiers", async () => {
+    await expect(ensureWorkspace(0)).rejects.toThrow("Invalid project workspace identifier");
+    await expect(ensureWorkspace(-1)).rejects.toThrow("Invalid project workspace identifier");
+    await expect(ensureWorkspace(Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow("Invalid project workspace identifier");
   });
 });
