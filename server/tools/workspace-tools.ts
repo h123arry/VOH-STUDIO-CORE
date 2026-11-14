@@ -192,15 +192,32 @@ function rejectCommandPathTraversal(tokens: string[]) {
 }
 
 async function validateCommand(cwd: string, command: string) {
-  const parts = command.trim().split(/\s+/); const executable = parts[0]; const args = parts.slice(1); if (!executable) throw new Error("Empty workspace command");
+  const parts = command.trim().split(/\s+/);
+  const executable = parts[0];
+  const args = parts.slice(1);
+  if (!executable) throw new Error("Empty workspace command");
+  rejectCommandPathTraversal(args);
+
   if (executable === "pnpm") {
-    if (args[0] === "install") { const packagePath = path.join(cwd, "package.json"); const packageJson = JSON.parse(await fs.readFile(packagePath, "utf8")); const dependencyCount = Object.keys({ ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}), ...(packageJson.optionalDependencies ?? {}) }).length; if (dependencyCount > 0) throw new Error("Dependency installation is blocked until packages pass the workspace allowlist; no unreviewed package lifecycle scripts are executed."); return { executable, args };
+    if (args[0] === "install") {
+      const packagePath = path.join(cwd, "package.json");
+      const packageJson = JSON.parse(await fs.readFile(packagePath, "utf8"));
+      const dependencyCount = Object.keys({ ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}), ...(packageJson.optionalDependencies ?? {}) }).length;
+      if (dependencyCount > 0) throw new Error("Dependency installation is blocked until packages pass the workspace allowlist; no unreviewed package lifecycle scripts are executed.");
+      return { executable, args };
     }
     if (!["build", "test", "start", "lint", "typecheck"].includes(args[0] ?? "")) throw new Error("Only declared build/test/start/lint/typecheck scripts may run");
-    const packageJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf8")); const script = packageJson.scripts?.[args[0]]; if (typeof script !== "string" || !SAFE_SCRIPT.test(script)) throw new Error("Package script is not on the safe workspace command policy");\n    rejectCommandPathTraversal(script.trim().split(/\\s+/).slice(1));\n    return { executable, args: [args[0]] };
+    const packageJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf8"));
+    const script = packageJson.scripts?.[args[0]];
+    if (typeof script !== "string" || !SAFE_SCRIPT.test(script)) throw new Error("Package script is not on the safe workspace command policy");
+    rejectCommandPathTraversal(script.trim().split(/\s+/).slice(1));
+    return { executable, args: [args[0]] };
   }
   if (executable === "git" && SAFE_GIT.test(args.join(" "))) return { executable, args };
-  if ((executable === "node" || executable === "python" || executable === "python3") && args.length === 1 && /^[A-Za-z0-9_./-]+\.(mjs|js|py)$/.test(args[0])) return { executable, args };
+  if ((executable === "node" || executable === "python" || executable === "python3") && args.length === 1 && /^[A-Za-z0-9_./-]+\.(mjs|js|py)$/.test(args[0])) {
+    await assertWorkspaceScriptPath(cwd, args[0]);
+    return { executable, args };
+  }
   throw new Error("Command is not on the allowed workspace command list");
 }
 
