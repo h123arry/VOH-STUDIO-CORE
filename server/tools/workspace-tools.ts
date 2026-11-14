@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { deleteProjectFile, renameProjectFile, upsertProjectFile } from "../domain/project-service";
+import { createSnapshotDirectory, ensureSnapshotSubdirectory } from "../domain/snapshot-paths";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(process.env.VOH_WORKSPACE_ROOT ?? path.join(process.cwd(), "workspace-data"));
@@ -245,4 +246,17 @@ export async function runWorkspaceCommand(projectId: number, command: string, ti
 }
 export async function installWorkspaceDependencies(projectId: number, signal?: AbortSignal) { return runWorkspaceCommand(projectId, "pnpm install --lockfile=false", 120_000, signal); }
 
-export async function snapshotWorkspace(projectId: number, snapshotId: string) { const workspace = await ensureWorkspace(projectId); const snapshotRoot = path.join(ROOT, "snapshots", `project-${projectId}`, snapshotId); await fs.mkdir(snapshotRoot, { recursive: true }); const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file"); for (const file of files) { const source = path.join(workspace, file.path); const target = path.join(snapshotRoot, file.path); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.copyFile(source, target); } return { snapshotPath: path.relative(ROOT, snapshotRoot), fileCount: files.length }; }
+export async function snapshotWorkspace(projectId: number, snapshotId: string) {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(snapshotId)) throw new Error("Invalid snapshot identifier");
+  const workspace = await ensureWorkspace(projectId);
+  const snapshotRoot = await createSnapshotDirectory(ROOT, path.join("snapshots", `project-${projectId}`, snapshotId));
+  const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file");
+  for (const file of files) {
+    const source = path.join(workspace, file.path);
+    const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
+    const target = path.join(targetParent, path.basename(file.path));
+    await fs.copyFile(source, target);
+  }
+  const storageRoot = await fs.realpath(ROOT);
+  return { snapshotPath: path.relative(storageRoot, snapshotRoot), fileCount: files.length };
+}
