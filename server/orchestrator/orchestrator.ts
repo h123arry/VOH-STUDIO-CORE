@@ -242,7 +242,7 @@ export async function runTask(taskId: number, ownerId: number) {
 
     await setProgress(task.id, 40, "build", "devops");
     await appendTaskEvent({ taskId, eventType: "command.started", actor: "devops", phase: "run", summary: "Started the workspace dependency preflight." });
-    const installCallId = await recordToolCall({ taskId, agentKey: "devops", toolName: "project.install", arguments: JSON.stringify({ command: "pnpm install --lockfile=false" }), permissionScope: "isolated project workspace package install", status: "started", resultSummary: "Checking whether the workspace dependency preflight is available." });
+    const installCallId = await recordToolCall({ taskId, agentKey: "devops", toolName: "project.install", arguments: JSON.stringify({ command: "pnpm install --lockfile=false" }), permissionScope: "application-host package preflight", status: "started", resultSummary: "Checking whether the workspace dependency preflight is available." });
     const install = await installWorkspaceDependencies(project.id, taskControllers.get(taskId)?.signal);
     await appendTaskEvent({ taskId, eventType: "command.completed", actor: "devops", phase: "run", severity: install.status === "passed" ? "success" : "error", summary: `Dependency preflight ${install.status}.`, metadata: { exitCode: install.exitCode, durationMs: install.durationMs } });
     if (installCallId) await updateToolCall(installCallId, { status: install.status === "passed" ? "completed" : "failed", resultSummary: install.output.slice(-4000), exitCode: install.exitCode, durationMs: install.durationMs });
@@ -257,7 +257,7 @@ export async function runTask(taskId: number, ownerId: number) {
         await assertTaskActive(taskId); attempt += 1;
         const phase = attempt === 1 ? check.phase : "debugging";
         await setProgress(task.id, check.kind === "build" ? 48 : 68, phase === "debugging" ? "debug" : phase, phase === "debugging" ? "debugger" : "qa");
-        await appendTaskEvent({ taskId, eventType: "verification.started", actor: "qa", phase: phase === "debugging" ? "debug" : check.phase, summary: `Running ${check.command} (attempt ${attempt}/${task.retryLimit + 1}) inside the isolated project workspace.` });
+        await appendTaskEvent({ taskId, eventType: "verification.started", actor: "qa", phase: phase === "debugging" ? "debug" : check.phase, summary: `Running ${check.command} (attempt ${attempt}/${task.retryLimit + 1}) on the application host.` });
         const verificationCallId = await recordToolCall({ taskId, agentKey: "qa", toolName: `project.${check.kind}`, arguments: JSON.stringify({ command: check.command, attempt }), permissionScope: "bounded project workspace command", status: "started", resultSummary: `Running ${check.kind} verification.` });
         const result = await runWorkspaceCommand(project.id, check.command, 60_000, taskControllers.get(taskId)?.signal);
         if (verificationCallId) await updateToolCall(verificationCallId, { status: result.status === "passed" ? "completed" : "failed", resultSummary: result.output.slice(-4000), exitCode: result.exitCode, durationMs: result.durationMs });
