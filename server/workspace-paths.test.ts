@@ -158,7 +158,7 @@ describe("workspace command path boundaries", () => {
       try {
         const result = await runWorkspaceCommand(projectId, "node ../" + path.basename(outside));
         expect(result.status).toBe("failed");
-        expect(result.output).toContain("inside the project directory");
+        expect(result.output).toContain("outside the project directory");
       } finally {
         await fs.rm(outside, { force: true });
       }
