@@ -57,3 +57,9 @@ export async function listProjectFiles(projectId: number) {
   if (!db) return [];
   return db.select().from(projectFiles).where(eq(projectFiles.projectId, projectId)).orderBy(projectFiles.path);
 }
+
+export async function deleteProjectFile(projectId: number, filePath: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(projectFiles).where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)));
+}
