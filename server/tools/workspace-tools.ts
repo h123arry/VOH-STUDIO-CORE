@@ -223,7 +223,11 @@ async function validateCommand(cwd: string, command: string) {
 
 export async function runWorkspaceCommand(projectId: number, command: string, timeout = 20_000, signal?: AbortSignal) {
   const cwd = await ensureWorkspace(projectId); const started = Date.now();
-  try { const safe = await validateCommand(cwd, command); const result = await execFileAsync(safe.executable, safe.args, { cwd, timeout, signal, killSignal: "SIGTERM", maxBuffer: 240_000, env: { PATH: process.env.PATH, HOME: cwd, XDG_CONFIG_HOME: path.join(cwd, ".config"), npm_config_cache: path.join(cwd, ".npm-cache"), NODE_ENV: "test" } }); return { status: "passed" as const, exitCode: 0, output: `${result.stdout}${result.stderr}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
+  try {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Project commands are disabled in production until an operating-system-isolated execution runtime is configured. No project code was executed.");
+    }
+    const safe = await validateCommand(cwd, command); const result = await execFileAsync(safe.executable, safe.args, { cwd, timeout, signal, killSignal: "SIGTERM", maxBuffer: 240_000, env: { PATH: process.env.PATH, HOME: cwd, XDG_CONFIG_HOME: path.join(cwd, ".config"), npm_config_cache: path.join(cwd, ".npm-cache"), NODE_ENV: "test" } }); return { status: "passed" as const, exitCode: 0, output: `${result.stdout}${result.stderr}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
   catch (error) { const failure = error as { code?: number | string; stdout?: string; stderr?: string; message?: string }; return { status: "failed" as const, exitCode: typeof failure.code === "number" ? failure.code : 1, output: `${failure.stdout ?? ""}${failure.stderr ?? ""}${failure.message ?? ""}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
 }
 export async function installWorkspaceDependencies(projectId: number, signal?: AbortSignal) { return runWorkspaceCommand(projectId, "pnpm install --lockfile=false", 120_000, signal); }

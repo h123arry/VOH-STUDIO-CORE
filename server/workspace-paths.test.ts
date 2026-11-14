@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
@@ -178,6 +178,25 @@ describe("workspace command path boundaries", () => {
       expect(result.status).toBe("failed");
       expect(result.output).toContain("outside the project directory");
     } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("production workspace execution boundary", () => {
+  it("does not execute project commands on the application server in production", async () => {
+    const projectId = 8_900_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const result = await runWorkspaceCommand(projectId, "git status");
+      expect(result.status).toBe("failed");
+      expect(result.output).toContain("disabled in production");
+      expect(result.output).toContain("No project code was executed");
+    } finally {
+      vi.unstubAllEnvs();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
