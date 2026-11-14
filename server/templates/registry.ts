@@ -1,6 +1,6 @@
 import type { Project } from "../../drizzle/schema";
 
-export type TemplateKind = "website" | "web_app" | "game" | "api" | "backend" | "automation" | "dashboard" | "saas";
+export type TemplateKind = "website" | "web_app" | "mobile" | "game" | "api" | "backend" | "automation" | "dashboard" | "saas";
 export type TemplateFile = { path: string; content: string };
 export type ProjectTemplate = { kind: TemplateKind; name: string; runtime: string; buildCommand: string; testCommand: string; files: (project: Project, objective: string) => TemplateFile[] };
 
