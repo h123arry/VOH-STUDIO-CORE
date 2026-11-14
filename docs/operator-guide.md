@@ -22,7 +22,7 @@ Deployments with an existing database must apply `drizzle/0007_mode_aware_tasks.
 
 ## Import an existing repository
 
-Open a project and use **Lifecycle control → Import an existing repository**. Public HTTPS repositories on GitHub, GitLab, and Bitbucket can be cloned into an empty project workspace. The import is indexed into the project file catalogue so source files can be inspected in the workspace panel. The import boundary rejects non-HTTPS URLs, unapproved hosts, URL credentials, ports, query strings, and fragments. Private repository import and remote push/pull through a connected GitHub identity require an authenticated provider integration and are not implied by public clone support.
+Open a project and use **Lifecycle control → Import an existing repository**. Public HTTPS repositories on GitHub, GitLab, and Bitbucket can be cloned into an empty project workspace using a shallow, single-branch clone. Git LFS smudge downloads are skipped to avoid fetching large binary payloads automatically. The import is indexed into the project file catalogue so bounded source files can be inspected in the workspace panel. The import boundary rejects non-HTTPS URLs, unapproved hosts, URL credentials, ports, query strings, and fragments. Private repository import and remote push/pull through a connected GitHub identity require an authenticated provider integration and are not implied by public clone support.
 
 Importing into the project root requires an empty workspace. Use a new project for a repository takeover; do not import over existing work. Large files remain in the workspace but are not copied into the bounded editor index.
 
