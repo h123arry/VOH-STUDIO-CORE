@@ -121,11 +121,17 @@ const mobileFiles = (project: Project, objective: string): TemplateFile[] => {
   const files = browserFiles(project, objective);
   return files.map(file => {
     if (file.path === "index.html") {
-      return { ...file, content: file.content.replace("<title>", '<meta name="theme-color" content="#10101b"><link rel="manifest" href="/manifest.webmanifest"><title>') };
+      return { ...file, content: file.content.replace("<title>", '<meta name="theme-color" content="#10101b"><link rel="manifest" href="manifest.webmanifest"><title>') };
+    }
+    if (file.path === "scripts/build.mjs") {
+      return { ...file, content: file.content.replace("fs.cpSync('src', 'dist/src', { recursive: true });", "fs.cpSync('src', 'dist/src', { recursive: true });\nfs.copyFileSync('manifest.webmanifest', 'dist/manifest.webmanifest');\nfs.mkdirSync('dist/icons', { recursive: true });\nfs.copyFileSync('icons/app.svg', 'dist/icons/app.svg');") };
+    }
+    if (file.path === "scripts/test.mjs") {
+      return { ...file, content: "import fs from 'node:fs';\nconst html = fs.readFileSync('index.html', 'utf8');\nconst manifest = JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));\nif (!html.includes('rel=\"manifest\"') || manifest.display !== 'standalone' || !fs.existsSync('icons/app.svg')) throw new Error('Mobile PWA smoke test failed');\nconsole.log('Mobile PWA smoke test passed.');\n" };
     }
     return file;
   }).concat([
-    { path: "manifest.webmanifest", content: JSON.stringify({ name: project.name, short_name: project.name.slice(0, 12), description: objective.slice(0, 160), start_url: "/", display: "standalone", background_color: "#071016", theme_color: "#10101b", icons: [{ src: "/icons/app.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }] }, null, 2) + "\n" },
+    { path: "manifest.webmanifest", content: JSON.stringify({ name: project.name, short_name: project.name.slice(0, 12), description: objective.slice(0, 160), start_url: "./", scope: "./", display: "standalone", background_color: "#071016", theme_color: "#10101b", icons: [{ src: "icons/app.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }] }, null, 2) + "\n" },
     { path: "icons/app.svg", content: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#10101b"/><path d="M128 128h256v64H192v64h160v64H192v64h192v64H128z" fill="#a78bfa"/></svg>\n' },
   ]);
 };
