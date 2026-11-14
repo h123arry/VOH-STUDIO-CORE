@@ -38,8 +38,9 @@ export function previewContentType(relativePath: string) {
 export const PREVIEW_SECURITY_HEADERS = {
   // Keep previews in a sandboxed browsing context. Network APIs and external
   // resource loads are blocked until a separately hosted preview origin exists.
-  "Content-Security-Policy": "sandbox allow-scripts allow-same-origin; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+  "Content-Security-Policy": "sandbox allow-scripts allow-same-origin; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
 };
