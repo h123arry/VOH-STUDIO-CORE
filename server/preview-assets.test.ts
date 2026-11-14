@@ -15,11 +15,10 @@ describe("workspace preview isolation", () => {
     expect(previewContentType(path)).toBe(expected);
   });
 
-  it("uses a sandboxed opaque origin and prevents authenticated-origin access", () => {
-    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("sandbox allow-scripts");
-    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).not.toContain("allow-same-origin");
-    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("connect-src https:");
-    expect(PREVIEW_SECURITY_HEADERS["Access-Control-Allow-Origin"]).toBe("null");
+  it("sandboxes previews and blocks network access", () => {
+    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("sandbox allow-scripts allow-same-origin");
+    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("connect-src 'none'");
+    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("worker-src 'none'");
     expect(PREVIEW_SECURITY_HEADERS["X-Content-Type-Options"]).toBe("nosniff");
     expect(PREVIEW_SECURITY_HEADERS["Referrer-Policy"]).toBe("no-referrer");
   });
