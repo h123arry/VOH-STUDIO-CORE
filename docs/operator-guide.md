@@ -26,3 +26,7 @@ Open a project and use **Lifecycle control → Import an existing repository**. 
 
 Importing into the project root requires an empty workspace. Use a new project for a repository takeover; do not import over existing work. Large files remain in the workspace but are not copied into the bounded editor index.
 
+## Workspace preview security
+
+Workspace previews are served with a restrictive Content Security Policy and a sandboxed browsing context. Script execution is allowed for local project files, while network connections, workers, forms, embedded frames, and external resource loads are blocked. This protects the authenticated Studio session from untrusted imported project code. As a result, previews are currently suited to self-contained browser projects; apps that need external APIs, remote assets, service workers, or live backend connections need a separately hosted isolated preview runtime before those features can be tested end-to-end.
+
