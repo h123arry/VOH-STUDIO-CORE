@@ -30,3 +30,5 @@ Importing into the project root requires an empty workspace. Use a new project f
 
 Workspace previews are served with a restrictive Content Security Policy and a sandboxed browsing context. Script execution is allowed for local project files, while network connections, workers, forms, embedded frames, and external resource loads are blocked. This protects the authenticated Studio session from untrusted imported project code. As a result, previews are currently suited to self-contained browser projects; apps that need external APIs, remote assets, service workers, or live backend connections need a separately hosted isolated preview runtime before those features can be tested end-to-end.
 
+The **Mobile** project type currently creates an installable Progressive Web App starter with a web app manifest and app icon. It is not a native Android APK or iOS IPA build. Native packaging, device simulators, and store submission require dedicated mobile build runners and signing credentials.
+
