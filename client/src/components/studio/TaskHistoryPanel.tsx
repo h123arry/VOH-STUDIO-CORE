@@ -155,6 +155,7 @@ function TaskHistoryRow({
   onReuse: () => void;
 }) {
   const tone = statusTone(task.status);
+  const unverified = task.status === "completed" && /runtime build and tests were skipped|runtime verification was explicitly skipped|not runtime-verified/i.test(task.finalSummary ?? "");
   return (
     <li className={`task-history-row ${selected ? "selected" : ""}`}>
       <button type="button" className="task-history-select" onClick={onSelect}>
@@ -166,7 +167,7 @@ function TaskHistoryRow({
           {timeAgo(task.createdAt)}
         </span>
       </button>
-      <span className={`task-history-status ${tone}`}>{task.status}</span>
+      <span className={`task-history-status ${unverified ? "warning" : tone}`}>{unverified ? "unverified" : task.status}</span>
       <button
         type="button"
         className="task-history-reuse"
