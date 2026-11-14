@@ -42,6 +42,11 @@ export async function gitPush(projectId: number, remote = "origin", branch?: str
 
 const secretPath = /(^|\/)(\.env(?:\.|$)|.*\.(pem|key|p12|pfx)|id_rsa|credentials(?:\.json)?)(\/|$)/i;
 const secretText = /(AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{20,}|password\s*[:=]\s*["'][^"']+["'])/i;
+export function repositoryFileIndexSafety(filePath: string, content: string) {
+  if (secretPath.test(filePath)) return { safe: false, reason: "sensitive_path" as const };
+  if (secretText.test(content)) return { safe: false, reason: "credential_pattern" as const };
+  return { safe: true, reason: null };
+}
 export async function inspectCommitSafety(projectId: number) { const files = await listWorkspaceFiles(projectId); const sensitivePaths = files.filter(file => secretPath.test(file.path)).map(file => file.path); const missingGitignore = !files.some(file => file.path === ".gitignore"); const textFindings: string[] = []; for (const file of files.filter(file => file.kind === "file" && file.size <= 60_000)) { try { const content = await fs.readFile(path.join(projectWorkspace(projectId), file.path), "utf8"); if (secretText.test(content)) textFindings.push(file.path); } catch { /* unreadable files are handled by Git itself */ } } return { safe: sensitivePaths.length === 0 && textFindings.length === 0 && !missingGitignore, sensitivePaths, textFindings, missingGitignore, recommendation: sensitivePaths.length || textFindings.length ? "Remove secrets before committing." : missingGitignore ? "Add a .gitignore before committing." : "Ready for a reviewed commit." }; }
 export async function gitCommit(projectId: number, message: string) { if (!message.trim() || message.length > 180) throw new Error("Commit message must be 1–180 characters"); const safety = await inspectCommitSafety(projectId); if (!safety.safe) throw new Error(safety.recommendation); const name = await runGit(projectId, ["config", "user.name"]).catch(() => ""); const email = await runGit(projectId, ["config", "user.email"]).catch(() => ""); if (!name) await runGit(projectId, ["config", "user.name", "VOH STUDIO"]); if (!email) await runGit(projectId, ["config", "user.email", "voh-studio@local.invalid"]); await runGit(projectId, ["add", "-A"]); const staged = await runGit(projectId, ["diff", "--cached", "--name-only"]); if (!staged) throw new Error("There are no changes to commit"); const stagedDiff = await runGit(projectId, ["diff", "--cached"]); if (secretText.test(stagedDiff)) { await runGit(projectId, ["reset" ]); throw new Error("Sensitive content detected in staged changes; commit was not created."); } const output = await runGit(projectId, ["commit", "-m", message]); return { output, safety, head: await runGit(projectId, ["rev-parse", "HEAD"]), files: staged.split("\n").filter(Boolean) }; }
 export async function cloneRepository(projectId: number, url: string, destination = "imported") {
@@ -60,13 +65,16 @@ export async function cloneRepository(projectId: number, url: string, destinatio
   await execFileAsync("git", ["clone", "--", remote, target], { cwd: root, timeout: 180_000, maxBuffer: 400_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" } });
   const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file" && (importToRoot || file.path.startsWith(safeDestination + path.sep)));
   let indexed = 0;
+  let skippedLargeFiles = 0;
+  let skippedSensitiveFiles = 0;
   for (const file of files) {
-    if (file.size > 60_000) continue;
+    if (file.size > 60_000) { skippedLargeFiles++; continue; }
     const absolute = path.join(root, file.path);
     const content = await fs.readFile(absolute, "utf8");
+    if (!repositoryFileIndexSafety(file.path, content).safe) { skippedSensitiveFiles++; continue; }
     await upsertProjectFile({ projectId, path: file.path, language: path.extname(file.path).slice(1) || undefined, contentHash: crypto.createHash("sha256").update(content).digest("hex"), size: Buffer.byteLength(content), content, lastOperation: "repository-import" });
     indexed++;
   }
-  return { destination: safeDestination, status: "cloned" as const, indexedFiles: indexed, skippedLargeFiles: files.length - indexed };
+  return { destination: safeDestination, status: "cloned" as const, indexedFiles: indexed, skippedLargeFiles, skippedSensitiveFiles };
 }
 export async function draftReleaseNotes(projectId: number) { const history = await gitHistory(projectId, 12); const stat = await runGit(projectId, ["diff", "HEAD~1", "--stat"]).catch(() => "No previous commit available; release notes reflect the current repository state."); return { notes: `## Changes\n${history ? history.split("\n").map(line => `- ${line}`).join("\n") : "- No commit history available."}\n\n## File impact\n${stat}`, source: "git-history-and-diff" as const }; }
