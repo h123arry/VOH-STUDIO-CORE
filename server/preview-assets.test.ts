@@ -21,6 +21,8 @@ describe("workspace preview isolation", () => {
     expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("connect-src 'none'");
     expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("worker-src 'none'");
     expect(PREVIEW_SECURITY_HEADERS["X-Content-Type-Options"]).toBe("nosniff");
+    expect(PREVIEW_SECURITY_HEADERS["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
+    expect(PREVIEW_SECURITY_HEADERS["X-Frame-Options"]).toBe("DENY");
     expect(PREVIEW_SECURITY_HEADERS["Referrer-Policy"]).toBe("no-referrer");
   });
 });
