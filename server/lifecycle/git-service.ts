@@ -21,7 +21,7 @@ export function validateGitRemote(value: string) {
   if (segments.length < 2 || segments.some(segment => segment === "." || segment === ".." || !/^[A-Za-z0-9_.-]+$/.test(segment))) {
     throw new Error("Repository URL must identify a valid owner and repository path");
   }
-  return url.toString().replace(/\\/$/, "");
+  return url.toString().replace(/\/$/, "");
 }
 const safeRemote = validateGitRemote;
 
