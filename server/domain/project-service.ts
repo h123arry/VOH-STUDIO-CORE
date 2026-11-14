@@ -63,3 +63,9 @@ export async function deleteProjectFile(projectId: number, filePath: string) {
   if (!db) return;
   await db.delete(projectFiles).where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)));
 }
+
+export async function renameProjectFile(projectId: number, oldPath: string, newPath: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(projectFiles).set({ path: newPath, lastOperation: "manual-rename" }).where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, oldPath)));
+}

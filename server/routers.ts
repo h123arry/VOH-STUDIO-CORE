@@ -12,7 +12,7 @@ import { listArtifacts } from "./domain/artifact-service";
 import { appendTaskEvent, approveTaskPlan, createTask, getTaskForOwner, listAgentRuns, listErrors, listQueuedInstructions, listTaskEvents, listTaskSteps, listTasks, listToolCalls, listVerifications, markInstruction, queueTaskInstruction, updateTask } from "./domain/task-service";
 import { cancelTaskExecution, startTask } from "./orchestrator/orchestrator";
 import { modelRoutes } from "./models/model-router";
-import { createWorkspaceFile, deleteWorkspaceFile, inspectWorkspace, readWorkspaceFile, writeWorkspaceFile, listWorkspaceFiles, normalizeWorkspacePath } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, renameWorkspaceFile, inspectWorkspace, readWorkspaceFile, writeWorkspaceFile, listWorkspaceFiles, normalizeWorkspacePath } from "./tools/workspace-tools";
 import { TOOL_REGISTRY, toolsForAgent } from "./tools/registry";
 import { listTemplates } from "./templates/registry";
 import { latestQualityScore } from "./quality/quality-engine";
@@ -130,6 +130,16 @@ export const appRouter = router({
       const safePath = normalizeWorkspacePath(input.path);
       await createProjectSnapshot({ projectId: input.projectId, reason: `Before deleting file: ${safePath}`.slice(0, 160) });
       const result = await deleteWorkspaceFile(input.projectId, safePath);
+      clearProjectContext(input.projectId);
+      return result;
+    }),
+    renameFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(255), newPath: z.string().min(1).max(255) })).mutation(async ({ ctx, input }) => {
+      if (!await getProjectForOwner(ctx.user.id, input.projectId)) throw new Error("Project not found");
+      const safePath = normalizeWorkspacePath(input.path);
+      const safeNewPath = normalizeWorkspacePath(input.newPath);
+      if (safePath === safeNewPath) throw new Error("Choose a different file path");
+      await createProjectSnapshot({ projectId: input.projectId, reason: `Before renaming file: ${safePath}`.slice(0, 160) });
+      const result = await renameWorkspaceFile(input.projectId, safePath, safeNewPath);
       clearProjectContext(input.projectId);
       return result;
     }),
