@@ -19,3 +19,16 @@ Project details include an editable Project memory note for workspace-specific p
 A completed task means the recorded scope passed the checks VOH could actually run. It does not mean every requested product adapter exists; the final summary and timeline state what was verified.
 
 Deployments with an existing database must apply `drizzle/0007_mode_aware_tasks.sql` (or run the configured Drizzle migration workflow) before using persisted execution modes and plan approval.
+
+## Import an existing repository
+
+Open a project and use **Lifecycle control → Import an existing repository**. Public HTTPS repositories on GitHub, GitLab, and Bitbucket can be cloned into an empty project workspace using a shallow, single-branch clone. Git LFS smudge downloads are skipped to avoid fetching large binary payloads automatically. The import is indexed into the project file catalogue so bounded source files can be inspected in the workspace panel. The import boundary rejects non-HTTPS URLs, unapproved hosts, URL credentials, ports, query strings, and fragments. Private repository import and remote push/pull through a connected GitHub identity require an authenticated provider integration and are not implied by public clone support.
+
+Importing into the project root requires an empty workspace. Use a new project for a repository takeover; do not import over existing work. Large files remain in the workspace but are not copied into the bounded editor index.
+
+## Workspace preview security
+
+Workspace previews are served with a restrictive Content Security Policy and a sandboxed browsing context. Script execution is allowed for local project files, while network connections, workers, forms, embedded frames, and external resource loads are blocked. This protects the authenticated Studio session from untrusted imported project code. As a result, previews are currently suited to self-contained browser projects; apps that need external APIs, remote assets, service workers, or live backend connections need a separately hosted isolated preview runtime before those features can be tested end-to-end.
+
+The **Mobile** project type currently creates an installable Progressive Web App starter with a web app manifest and app icon. It is not a native Android APK or iOS IPA build. Native packaging, device simulators, and store submission require dedicated mobile build runners and signing credentials.
+

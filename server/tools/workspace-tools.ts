@@ -11,11 +11,28 @@ const MAX_FILE_BYTES = 60_000;
 const SAFE_SCRIPT = /^(node|pnpm|vite|tsc|echo)\s+[A-Za-z0-9_./:@=-]+(?:\s+[A-Za-z0-9_./:@=-]+)*$/;
 const SAFE_GIT = /^(status|diff|log(?:\s+--oneline)?|rev-parse(?:\s+HEAD)?)$/;
 
-const safePath = (relativePath: string) => {
-  const normalized = path.normalize(relativePath).replace(/^([/\\])+/, "");
-  if (!normalized || normalized === "." || normalized.split(path.sep).includes("..")) throw new Error("Path is outside the project workspace");
-  return normalized;
-};
+export function normalizeWorkspacePath(relativePath: string) {
+  if (typeof relativePath !== "string" || relativePath.length === 0 || relativePath.includes(String.fromCharCode(0))) {
+    throw new Error("Path is outside the project workspace");
+  }
+  // Treat both slash styles as separators so a path cannot become traversal
+  // when a workspace is moved between POSIX and Windows hosts.
+  const portable = relativePath.replace(/\\/g, "/");
+  if (portable.startsWith("/") || /^[a-zA-Z]:/.test(portable) || portable.startsWith("//")) {
+    throw new Error("Path is outside the project workspace");
+  }
+  const segments = portable.split("/");
+  if (segments.some(segment => segment === "..")) {
+    throw new Error("Path is outside the project workspace");
+  }
+  const normalized = path.posix.normalize(portable);
+  if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../")) {
+    throw new Error("Path is outside the project workspace");
+  }
+  return normalized.split("/").join(path.sep);
+}
+
+const safePath = normalizeWorkspacePath;
 const assertAbsoluteInside = (workspace: string, absolute: string) => { if (absolute !== workspace && !absolute.startsWith(`${workspace}${path.sep}`)) throw new Error("Path is outside the project workspace"); };
 const assertRealInside = async (workspace: string, absolute: string) => { const real = await fs.realpath(absolute); if (real !== workspace && !real.startsWith(`${workspace}${path.sep}`)) throw new Error("Resolved path is outside the project workspace"); return real; };
 
