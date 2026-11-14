@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -142,5 +142,43 @@ describe("workspace file rename", () => {
       await expect(renameWorkspaceFile(projectId, "linked.txt", "renamed.txt")).rejects.toThrow("Symbolic links");
       await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("keep");
     } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+});
+
+
+describe("workspace command path boundaries", () => {
+  it("rejects scripts that escape the project directory", async () => {
+    const projectId = 8_700_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(root, { recursive: true });
+      const outside = path.join(path.dirname(root), `voh-outside-script-${projectId}.js`);
+      await fs.writeFile(outside, "process.exit(0)");
+      try {
+        const result = await runWorkspaceCommand(projectId, "node ../" + path.basename(outside));
+        expect(result.status).toBe("failed");
+        expect(result.output).toContain("inside the project directory");
+      } finally {
+        await fs.rm(outside, { force: true });
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects package scripts containing parent-directory traversal", async () => {
+    const projectId = 8_800_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(root, { recursive: true });
+      await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "node ../outside.js" } }));
+      const result = await runWorkspaceCommand(projectId, "pnpm test");
+      expect(result.status).toBe("failed");
+      expect(result.output).toContain("outside the project directory");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
