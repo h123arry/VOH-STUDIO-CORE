@@ -101,10 +101,10 @@ export const appRouter = router({
       if (!project) throw new Error("Project not found");
       return { path: input.path, content: await readWorkspaceFile(input.projectId, input.path) };
     }),
-    writeFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(500), content: z.string().max(60_000) })).mutation(async ({ ctx, input }) => {
+    writeFile: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), path: z.string().min(1).max(255), content: z.string().max(60_000) })).mutation(async ({ ctx, input }) => {
       const project = await getProjectForOwner(ctx.user.id, input.projectId);
       if (!project) throw new Error("Project not found");
-      await createProjectSnapshot({ projectId: input.projectId, reason: `Before manual editor save: ${input.path}` });
+      await createProjectSnapshot({ projectId: input.projectId, reason: `Before manual editor save: ${input.path}`.slice(0, 160) });
       const result = await writeWorkspaceFile(input.projectId, input.path, input.content, "manual-editor");
       clearProjectContext(input.projectId);
       return { ...result, saved: true };
