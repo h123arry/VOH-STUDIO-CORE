@@ -35,10 +35,9 @@ export function previewContentType(relativePath: string) {
 }
 
 export const PREVIEW_SECURITY_HEADERS = {
-  // A sandboxed opaque origin keeps imported/generated code away from the
-  // authenticated Studio origin while still allowing local scripts to run.
-  "Content-Security-Policy": "sandbox allow-scripts; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' https: data:; media-src 'self' https: data: blob:; connect-src https:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
-  "Access-Control-Allow-Origin": "null",
+  // Keep previews in a sandboxed browsing context. Network APIs and external
+  // resource loads are blocked until a separately hosted preview origin exists.
+  "Content-Security-Policy": "sandbox allow-scripts allow-same-origin; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
