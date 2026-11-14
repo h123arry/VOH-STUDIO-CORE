@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert } from "lucide-react";
+import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert } from "lucide-react";
 import type { ProjectDetail } from "@/lib/studio-types";
 import { fileLanguage } from "@/lib/studio-types";
 import { trpc } from "@/lib/trpc";
@@ -61,6 +61,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
       <div><div className="text-[11px] font-semibold uppercase tracking-[.16em] text-[#58716f]">Workspace</div><div className="mt-1 text-sm font-medium text-[#dcece8]">Files and evidence</div></div>
       <div className="flex items-center gap-3 text-[10px] text-[#58716f]">
         {detail?.project && files.some(file => file.path === "index.html") && <a href={"/api/preview/" + detail.project.id + "/"} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[#7df2c5] hover:text-[#b2f8df]"><ExternalLink size={12} /> Preview</a>}
+        {detail?.project && <a href={"/api/projects/" + detail.project.id + "/export.zip"} download className="flex items-center gap-1 text-[#9bb9b0] hover:text-[#d2e9df]"><Download size={12} /> Export ZIP</a>}
         <span className="flex items-center gap-2"><GitBranch size={13} /> persistent workspace</span>
       </div>
     </div>

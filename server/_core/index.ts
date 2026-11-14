@@ -9,6 +9,7 @@ import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
 import { getProjectForOwner } from "../domain/project-service";
 import { readWorkspaceAsset } from "../tools/workspace-tools";
+import { createWorkspaceZip } from "../tools/project-export";
 import { PREVIEW_SECURITY_HEADERS, previewContentType } from "../tools/preview-assets";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -45,6 +46,26 @@ async function startServer() {
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
   app.get("/api/platform/config.js", (_req, res) => {
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
+  });
+  app.get(/^\/api\/projects\/(\d+)\/export\.zip$/, async (req, res) => {
+    try {
+      const context = await createContext({ req, res, info: {} as never });
+      if (!context.user) return res.status(401).json({ error: "Authentication required" });
+      const projectId = Number(req.params[0]);
+      const project = await getProjectForOwner(context.user.id, projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const result = await createWorkspaceZip(projectId);
+      const filename = (project.slug || ("project-" + projectId)).replace(/[^A-Za-z0-9_-]/g, "-");
+      res.set("Content-Type", "application/zip");
+      res.set("Content-Disposition", "attachment; filename=\"" + filename + ".zip\"");
+      res.set("Cache-Control", "no-store");
+      res.set("X-Content-Type-Options", "nosniff");
+      res.set("X-VOH-Export-Files", String(result.fileCount));
+      res.set("X-VOH-Export-Skipped", String(result.skippedFiles));
+      return res.send(result.archive);
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : "Project export failed" });
+    }
   });
   app.get(/^\/api\/preview\/(\d+)(?:\/(.*))?$/, async (req, res) => {
     try {
