@@ -5,7 +5,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { projectFiles, projectSnapshots } from "../../drizzle/schema";
 import { clearProjectContext } from "../context/context-engine";
 import { getDb } from "../db";
-import { projectWorkspace, snapshotWorkspace } from "../tools/workspace-tools";
+import { ensureWorkspace, snapshotWorkspace } from "../tools/workspace-tools";
+import { assertSnapshotTreeHasNoSymlinks, resolveSnapshotDirectory } from "./snapshot-paths";
 
 const ROOT = path.resolve(
   process.env.VOH_WORKSPACE_ROOT ?? path.join(process.cwd(), "workspace-data")
@@ -60,25 +61,23 @@ export async function restoreProjectSnapshot(
       .limit(1)
   )[0];
   if (!row) throw new Error("Snapshot not found");
-  const source = path.resolve(ROOT, row.snapshotPath);
-  if (source === ROOT || !source.startsWith(`${ROOT}${path.sep}`))
-    throw new Error("Snapshot path is outside storage");
-  if (!(await fs.stat(source)).isDirectory())
-    throw new Error("Snapshot is not a workspace directory");
+  const source = await resolveSnapshotDirectory(ROOT, row.snapshotPath);
+  await assertSnapshotTreeHasNoSymlinks(source);
 
-  const workspace = projectWorkspace(projectId);
+  const workspace = await ensureWorkspace(projectId);
   await fs.rm(workspace, { recursive: true, force: true });
   await fs.mkdir(workspace, { recursive: true });
-  await fs.cp(source, workspace, {
+  const restoredWorkspace = await ensureWorkspace(projectId);
+  await fs.cp(source, restoredWorkspace, {
     recursive: true,
     force: true,
     dereference: false,
   });
 
-  const relativePaths = await listRelativeFiles(workspace);
+  const relativePaths = await listRelativeFiles(restoredWorkspace);
   const indexedFiles: Array<typeof projectFiles.$inferInsert> = [];
   for (const relativePath of relativePaths) {
-    const absolutePath = path.join(workspace, relativePath);
+    const absolutePath = path.join(restoredWorkspace, relativePath);
     const fileStat = await fs.stat(absolutePath);
     if (fileStat.size > 60_000) continue;
     const content = await fs.readFile(absolutePath, "utf8");
@@ -127,11 +126,11 @@ export async function compareProjectSnapshot(
       .limit(1)
   )[0];
   if (!row) throw new Error("Snapshot not found");
-  const source = path.resolve(ROOT, row.snapshotPath);
-  if (source === ROOT || !source.startsWith(`${ROOT}${path.sep}`))
-    throw new Error("Snapshot path is outside storage");
+  const source = await resolveSnapshotDirectory(ROOT, row.snapshotPath);
+  await assertSnapshotTreeHasNoSymlinks(source);
   const snapshotFiles = await listRelativeFiles(source);
-  const currentFiles = await listRelativeFiles(projectWorkspace(projectId));
+  const workspace = await ensureWorkspace(projectId);
+  const currentFiles = await listRelativeFiles(workspace);
   return {
     snapshotId: row.id,
     added: currentFiles.filter(file => !snapshotFiles.includes(file)),
