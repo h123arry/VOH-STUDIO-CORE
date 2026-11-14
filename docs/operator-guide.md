@@ -40,3 +40,6 @@ The Workspace panel also reads the on-disk file inventory. Files excluded from t
 ## Export a project
 
 Use **Export ZIP** in the Workspace panel to download the current project source. The export is owner-authenticated, excludes `.git`, `node_modules`, environment files, private-key files, and content matching known credential patterns, and omits individual files larger than 5 MB. Exports are bounded to 500 files and 25 MB uncompressed; a project that exceeds the archive limits must be reduced before export.
+## Studio readiness
+
+Open **Advanced details** to view the Studio Readiness panel. It checks platform identity configuration, database connectivity, and coding/reasoning model routes without displaying secret values. It also distinguishes capabilities available in this build from features that still need isolated backend execution, native mobile build runners, or live deployment providers.
