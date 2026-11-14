@@ -53,6 +53,7 @@
 .task-history-status.success { background: #143027; color: #7df2c5; }
 .task-history-status.danger { background: #321e1e; color: #f87171; }
 .task-history-status.active { background: #332d1c; color: #f6c86e; }
+.task-history-status.warning { background: #332d1c; color: #f6c86e; }
 .task-history-status.muted { background: #242424; color: #888; }
 .task-history-muted, .task-history-error { margin: 0; padding: 8px; color: #78908e; font-size: 11px; }
 .task-history-error { color: #f0a69c; }
