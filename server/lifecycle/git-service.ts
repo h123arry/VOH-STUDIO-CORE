@@ -62,7 +62,7 @@ export async function cloneRepository(projectId: number, url: string, destinatio
   } else {
     await fs.access(target).then(() => { throw new Error("Clone destination already exists"); }).catch(error => { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; });
   }
-  await execFileAsync("git", ["clone", "--", remote, target], { cwd: root, timeout: 180_000, maxBuffer: 400_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" } });
+  await execFileAsync("git", ["clone", "--depth=1", "--no-tags", "--single-branch", "--", remote, target], { cwd: root, timeout: 180_000, maxBuffer: 400_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_LFS_SKIP_SMUDGE: "1" } });
   const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file" && (importToRoot || file.path.startsWith(safeDestination + path.sep)));
   let indexed = 0;
   let skippedLargeFiles = 0;
