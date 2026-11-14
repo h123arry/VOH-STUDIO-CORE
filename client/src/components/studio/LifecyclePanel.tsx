@@ -40,7 +40,7 @@ export default function LifecyclePanel({ projectId }: { projectId?: number }) {
       </div>
       <p className="mt-2 text-[10px] leading-5 text-[#617b77]">Public HTTPS repositories on GitHub, GitLab, and Bitbucket. Imports into an empty project workspace and indexes source files. Private repositories require an authenticated provider connection.</p>
       {clone.error && <p role="alert" className="mt-2 text-xs text-[#f0a69c]">{clone.error.message}</p>}
-      {clone.data && <p className="mt-2 text-xs text-[#9bd9c5]">Imported successfully. {clone.data.indexedFiles} files indexed{clone.data.skippedLargeFiles ? `; ${clone.data.skippedLargeFiles} large files are available on disk but not loaded into the editor` : ""}.</p>}
+      {clone.data && <p className="mt-2 text-xs text-[#9bd9c5]">Imported successfully. {clone.data.indexedFiles} files indexed{clone.data.skippedLargeFiles ? `; ${clone.data.skippedLargeFiles} large files are available on disk but not loaded into the editor` : ""}{clone.data.skippedSensitiveFiles ? `; ${clone.data.skippedSensitiveFiles} files containing credentials or private material were excluded from the editor index` : ""}.</p>}
     </form>
   </section>;
 }
