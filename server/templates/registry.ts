@@ -123,14 +123,10 @@ const mobileFiles = (project: Project, objective: string): TemplateFile[] => {
     if (file.path === "index.html") {
       return { ...file, content: file.content.replace("<title>", '<meta name="theme-color" content="#10101b"><link rel="manifest" href="/manifest.webmanifest"><title>') };
     }
-    if (file.path === "src/main.js") {
-      return { ...file, content: file.content + "\nif ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/service-worker.js').catch(() => {}); }\n" };
-    }
     return file;
   }).concat([
     { path: "manifest.webmanifest", content: JSON.stringify({ name: project.name, short_name: project.name.slice(0, 12), description: objective.slice(0, 160), start_url: "/", display: "standalone", background_color: "#071016", theme_color: "#10101b", icons: [{ src: "/icons/app.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }] }, null, 2) + "\n" },
     { path: "icons/app.svg", content: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#10101b"/><path d="M128 128h256v64H192v64h160v64H192v64h192v64H128z" fill="#a78bfa"/></svg>\n' },
-    { path: "service-worker.js", content: "const CACHE = 'voh-app-v1';\nself.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['/','/src/styles.css','/src/main.js']))));\nself.addEventListener('fetch', event => { if (event.request.method !== 'GET') return; event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request))); });\n" },
   ]);
 };
 
