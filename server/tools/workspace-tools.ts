@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { upsertProjectFile } from "../domain/project-service";
+import { deleteProjectFile, upsertProjectFile } from "../domain/project-service";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(process.env.VOH_WORKSPACE_ROOT ?? path.join(process.cwd(), "workspace-data"));
@@ -110,6 +110,20 @@ export async function writeWorkspaceFile(projectId: number, relativePath: string
 
 export async function createWorkspaceFile(projectId: number, relativePath: string, content = "") {
   return writeWorkspaceFile(projectId, relativePath, content, "manual-create", true);
+}
+
+export async function deleteWorkspaceFile(projectId: number, relativePath: string) {
+  const workspace = await ensureWorkspace(projectId);
+  const safe = safePath(relativePath);
+  const absolute = path.join(workspace, safe);
+  assertAbsoluteInside(workspace, absolute);
+  const entry = await fs.lstat(absolute);
+  if (entry.isSymbolicLink()) throw new Error("Symbolic links cannot be deleted through the workspace editor");
+  if (!entry.isFile()) throw new Error("Only regular files can be deleted through the workspace editor");
+  await assertRealInside(workspace, absolute);
+  await fs.unlink(absolute);
+  await deleteProjectFile(projectId, safe);
+  return { path: safe, deleted: true };
 }
 
 export async function inspectWorkspace(projectId: number) { const files = await listWorkspaceFiles(projectId); return { files, hasPackageManifest: Boolean(files.find(file => file.path === "package.json")), summary: `${files.filter(file => file.kind === "file").length} files indexed` }; }

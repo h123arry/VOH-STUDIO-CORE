@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createWorkspaceFile, normalizeWorkspacePath, projectWorkspace, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, normalizeWorkspacePath, projectWorkspace, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -74,6 +74,39 @@ describe("workspace file creation", () => {
       await expect(createWorkspaceFile(projectId, "src/new.ts", "export const created = true;")).resolves.toMatchObject({ path: path.join("src", "new.ts") });
       await expect(createWorkspaceFile(projectId, "src/new.ts", "replacement")).rejects.toThrow("A file already exists");
       await expect(fs.readFile(path.join(root, "src", "new.ts"), "utf8")).resolves.toBe("export const created = true;");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("workspace file deletion", () => {
+  it("deletes a regular file and removes its indexed record", async () => {
+    const projectId = 8_300_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await writeWorkspaceFile(projectId, "src/remove-me.ts", "export const temporary = true;");
+      await expect(deleteWorkspaceFile(projectId, "src/remove-me.ts")).resolves.toMatchObject({ path: path.join("src", "remove-me.ts"), deleted: true });
+      await expect(fs.access(path.join(root, "src", "remove-me.ts"))).rejects.toThrow();
+      await expect(deleteWorkspaceFile(projectId, "src/remove-me.ts")).rejects.toThrow();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to delete directories and symlinks", async () => {
+    const projectId = 8_400_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "folder"), { recursive: true });
+      await fs.writeFile(path.join(root, "target.txt"), "keep");
+      await fs.symlink(path.join(root, "target.txt"), path.join(root, "linked.txt"));
+      await expect(deleteWorkspaceFile(projectId, "folder")).rejects.toThrow("Only regular files");
+      await expect(deleteWorkspaceFile(projectId, "linked.txt")).rejects.toThrow("Symbolic links");
+      await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("keep");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

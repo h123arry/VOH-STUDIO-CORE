@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert, Plus, Check, RefreshCw } from "lucide-react";
+import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert, Plus, Check, RefreshCw, Trash2 } from "lucide-react";
 import type { ProjectDetail } from "@/lib/studio-types";
 import { fileLanguage } from "@/lib/studio-types";
 import { trpc } from "@/lib/trpc";
@@ -53,6 +53,17 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
       onSelect(result.path);
     },
   });
+  const deleteFile = trpc.workspace.deleteFile.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.projects.get.invalidate({ projectId: detail?.project.id ?? 0 }),
+        utils.workspace.tree.invalidate({ projectId: detail?.project.id ?? 0 }),
+      ]);
+      const nextFile = files.find(file => file.path !== selected?.path);
+      onSelect(nextFile?.path ?? "");
+      setEditing(false);
+    },
+  });
 
   useEffect(() => {
     setDraft(selected?.content ?? "");
@@ -103,14 +114,17 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
             <div className="flex items-center gap-2 text-xs text-[#c9ded9]">{iconFor(selected.path)} {selected.path}<span className="font-mono text-[10px] text-[#858891]">{fileLanguage(selected.path)} · {selected.size} B</span>{editing && draft !== (selected.content ?? "") && <span role="status" className="rounded border border-[#6b5830] px-1.5 py-0.5 text-[9px] text-[#e6c982]">Unsaved changes</span>}</div>
             <div className="flex items-center gap-2">
               {saved && <span role="status" className="text-[10px] text-[#e5e7eb]">Saved · recovery snapshot created</span>}
-              {!editing ? <button type="button" onClick={() => { setSaved(false); setEditing(true); }} disabled={selected.content == null} className="flex items-center gap-1 rounded border border-[#3a3d45] px-2 py-1.5 text-[10px] text-[#d1d5db] hover:bg-[#202228] disabled:opacity-40"><Pencil size={11} /> Edit</button> : <>
+              {!editing ? <>
+                <button type="button" onClick={() => { if (!detail?.project || !window.confirm(`Delete ${selected.path}? A recovery snapshot will be created first.`)) return; deleteFile.mutate({ projectId: detail.project.id, path: selected.path }); }} disabled={!detail?.project || deleteFile.isPending || saveFile.isPending} className="flex items-center gap-1 rounded border border-[#493438] px-2 py-1.5 text-[10px] text-[#e7b4b4] hover:bg-[#261b1d] disabled:opacity-40"><Trash2 size={11} /> {deleteFile.isPending ? "Deleting…" : "Delete"}</button>
+                <button type="button" onClick={() => { setSaved(false); setEditing(true); }} disabled={selected.content == null || deleteFile.isPending} className="flex items-center gap-1 rounded border border-[#3a3d45] px-2 py-1.5 text-[10px] text-[#d1d5db] hover:bg-[#202228] disabled:opacity-40"><Pencil size={11} /> Edit</button>
+              </> : <>
                 <button type="button" onClick={() => { setDraft(selected.content ?? ""); setEditing(false); saveFile.reset(); }} disabled={saveFile.isPending} className="flex items-center gap-1 rounded border border-[#3a3d45] px-2 py-1.5 text-[10px] text-[#d1d5db] hover:bg-[#202228]"><X size={11} /> Cancel</button>
                 <button type="button" onClick={save} disabled={saveFile.isPending || draft === (selected.content ?? "")} title="Save changes (Ctrl/⌘ + S)" className="flex items-center gap-1 rounded bg-[#e5e7eb] px-2 py-1.5 text-[10px] font-semibold text-[#0b0c0f] hover:bg-[#ffffff] disabled:opacity-40">{saveFile.isPending ? <LoaderCircle size={11} className="animate-spin" /> : <Save size={11} />}{saveFile.isPending ? "Saving…" : "Save"}</button>
               </>}
             </div>
           </div>
           {editing ? <><textarea aria-label={`Edit ${selected.path}`} spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); save(); } }} className="studio-scroll min-h-[320px] w-full resize-y bg-[#0b0c0f] p-4 font-mono text-[12px] leading-6 text-[#e5e7eb] outline-none focus:ring-1 focus:ring-inset focus:ring-[#a1a1aa]" /><div className="border-t border-[#292b31] px-4 py-1.5 text-[9px] text-[#858891]">Tip: press Ctrl + S or ⌘ + S to save</div></> : <pre className="studio-scroll max-h-[320px] overflow-auto p-4 text-[12px] leading-6 text-[#bfc3cb]">{selected.content ?? "Content is indexed on disk and will be readable through the workspace endpoint."}</pre>}
-          {saveFile.error && <p role="alert" className="border-t border-[#472d31] px-4 py-2 text-xs text-[#f0a69c]">{saveFile.error.message}</p>}
+          {saveFile.error && <p role="alert" className="border-t border-[#472d31] px-4 py-2 text-xs text-[#f0a69c]">{saveFile.error.message}</p>}{deleteFile.error && <p role="alert" className="border-t border-[#472d31] px-4 py-2 text-xs text-[#f0a69c]">{deleteFile.error.message}</p>}
         </> : selectedDisk ? <div className="p-5"><div className="flex items-center gap-2 text-sm text-[#e0d6b6]"><ShieldAlert size={15} /> {selectedDisk.path}</div><p className="mt-3 text-xs leading-6 text-[#a1a1aa]">This file is present in the project workspace but is not loaded into the editor index. Large files and files that may contain credentials or private material are intentionally excluded. Use the project's own tooling to manage this file.</p><div className="mt-2 font-mono text-[10px] text-[#858891]">{selectedDisk.size.toLocaleString()} bytes · read-only in Studio</div></div> : <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-[#858891]"><TerminalSquare size={24} /><span className="text-xs">Workspace output will appear here.</span></div>}
       </div>
     </div>
