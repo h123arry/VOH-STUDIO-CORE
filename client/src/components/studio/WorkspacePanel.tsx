@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert } from "lucide-react";
+import { ExternalLink, Download, FileCode2, FileJson2, FileText, Folder, GitBranch, TerminalSquare, Pencil, Save, X, LoaderCircle, ShieldAlert, Plus, Check } from "lucide-react";
 import type { ProjectDetail } from "@/lib/studio-types";
 import { fileLanguage } from "@/lib/studio-types";
 import { trpc } from "@/lib/trpc";
@@ -30,6 +30,8 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newFilePath, setNewFilePath] = useState("");
   const saveFile = trpc.workspace.writeFile.useMutation({
     onSuccess: async () => {
       setEditing(false);
@@ -38,6 +40,17 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
         utils.workspace.tree.invalidate({ projectId: detail?.project.id ?? 0 }),
       ]);
       setSaved(true);
+    },
+  });
+  const createFile = trpc.workspace.createFile.useMutation({
+    onSuccess: async result => {
+      setCreating(false);
+      setNewFilePath("");
+      await Promise.all([
+        utils.projects.get.invalidate({ projectId: detail?.project.id ?? 0 }),
+        utils.workspace.tree.invalidate({ projectId: detail?.project.id ?? 0 }),
+      ]);
+      onSelect(result.path);
     },
   });
 
@@ -68,6 +81,15 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
     <div className="grid min-h-[320px] grid-cols-[190px_minmax(0,1fr)]">
       <div className="studio-scroll border-r border-[#182f35] p-3">
         <div className="mb-2 flex items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[.14em] text-[#56706f]"><Folder size={12} /> root</div>
+        <button type="button" onClick={() => { setCreating(value => !value); createFile.reset(); }} disabled={!detail?.project || createFile.isPending || saveFile.isPending} className="mb-2 flex w-full items-center gap-2 rounded border border-dashed border-[#254044] px-2 py-2 text-left text-[10px] text-[#9bb9b0] hover:bg-[#10252b]"><Plus size={12} /> New file</button>
+        {creating && <form onSubmit={event => { event.preventDefault(); if (!detail?.project || !newFilePath.trim()) return; createFile.mutate({ projectId: detail.project.id, path: newFilePath.trim(), content: "" }); }} className="mb-3 space-y-2 rounded border border-[#254044] bg-[#08151a] p-2">
+          <input autoFocus aria-label="New file path" value={newFilePath} onChange={event => setNewFilePath(event.target.value)} placeholder="src/new-file.ts" className="w-full rounded border border-[#254044] bg-[#071016] px-2 py-2 font-mono text-[10px] text-[#d4e5df] outline-none focus:border-[#7df2c5]" />
+          <div className="flex gap-2">
+            <button type="submit" disabled={!newFilePath.trim() || createFile.isPending} className="flex flex-1 items-center justify-center gap-1 rounded bg-[#7df2c5] px-2 py-1.5 text-[10px] font-semibold text-[#071016] disabled:opacity-40">{createFile.isPending ? <LoaderCircle size={11} className="animate-spin" /> : <Check size={11} />} Create</button>
+            <button type="button" onClick={() => { setCreating(false); setNewFilePath(""); createFile.reset(); }} disabled={createFile.isPending} className="rounded border border-[#254044] px-2 py-1.5 text-[10px] text-[#b8d5cc]">Cancel</button>
+          </div>
+          {createFile.error && <p role="alert" className="text-[10px] leading-4 text-[#f0a69c]">{createFile.error.message}</p>}
+        </form>}
         {files.map(file => <button key={file.id} onClick={() => selectFile(file.path)} disabled={saveFile.isPending} className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs transition ${activePath === file.path ? "bg-[#122f31] text-[#e1f9f0]" : "text-[#78908e] hover:bg-[#10252b] hover:text-[#cde1dc]"}`}>{iconFor(file.path)}<span className="min-w-0 truncate">{file.path}</span></button>)}
         {unindexedFiles.length > 0 && <>
           <div className="mb-2 mt-4 flex items-center gap-2 border-t border-[#182f35] px-2 pt-3 text-[9px] font-semibold uppercase tracking-[.12em] text-[#6c7773]"><ShieldAlert size={11} /> Not indexed</div>
