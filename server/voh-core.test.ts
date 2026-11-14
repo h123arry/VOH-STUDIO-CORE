@@ -92,7 +92,9 @@ describe("VOH core policies", () => {
     const html = files.find(file => file.path === "index.html")?.content ?? "";
     expect(html).not.toContain("<script>alert");
     expect(html).toContain("&lt;script&gt;");
-    expect(getTemplate("mobile")).toBeUndefined();
+    expect(getTemplate("mobile")).toMatchObject({ name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser" });
+    expect(getTemplate("mobile")?.name).not.toContain("Android APK");
+    expect(getTemplate("mobile")?.name).not.toContain("iOS IPA");
   });
   it("classifies and explains a compiler failure", () => {
     expect(classifyFailure("tsc: Cannot find module './router'")).toBe("dependency");
