@@ -49,9 +49,56 @@ export async function readWorkspaceFile(projectId: number, relativePath: string)
 export async function readWorkspaceAsset(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); const link = await fs.lstat(absolute); if (link.isSymbolicLink()) throw new Error("Symbolic links are not served in preview"); await assertRealInside(workspace, absolute); if (link.size > 2_000_000) throw new Error("Preview asset exceeds the size limit"); return { path: safe, content: await fs.readFile(absolute), size: link.size }; }
 
 export async function writeWorkspaceFile(projectId: number, relativePath: string, content: string, lastOperation = "write") {
-  if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) throw new Error("File exceeds the workspace size limit");
-  const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); await fs.mkdir(path.dirname(absolute), { recursive: true }); const parent = await fs.realpath(path.dirname(absolute)); if (parent !== workspace && !parent.startsWith(`${workspace}${path.sep}`)) throw new Error("Resolved parent is outside the project workspace"); const existing = await fs.lstat(absolute).catch(() => null); if (existing?.isSymbolicLink()) throw new Error("Symbolic links cannot be overwritten");
-  await fs.writeFile(absolute, content, "utf8"); await upsertProjectFile({ projectId, path: safe, language: path.extname(safe).slice(1) || undefined, contentHash: crypto.createHash("sha256").update(content).digest("hex"), size: Buffer.byteLength(content), content, lastOperation }); return { path: safe, size: Buffer.byteLength(content) };
+  const size = Buffer.byteLength(content, "utf8");
+  if (size > MAX_FILE_BYTES) throw new Error("File exceeds the workspace size limit");
+
+  const workspace = await ensureWorkspace(projectId);
+  const safe = safePath(relativePath);
+  const absolute = path.join(workspace, safe);
+  assertAbsoluteInside(workspace, absolute);
+
+  // Walk each parent component instead of trusting recursive mkdir/realpath.
+  // This rejects symlinked directories even when they point elsewhere inside
+  // the workspace, keeping writes predictable and preventing link swaps.
+  const parentSegments = path.dirname(safe).split(path.sep).filter(Boolean);
+  let parent = workspace;
+  for (const segment of parentSegments) {
+    parent = path.join(parent, segment);
+    const entry = await fs.lstat(parent).catch(() => null);
+    if (entry?.isSymbolicLink()) throw new Error("Symbolic links are not allowed in workspace paths");
+    if (entry && !entry.isDirectory()) throw new Error("Workspace parent path is not a directory");
+    if (!entry) await fs.mkdir(parent);
+    const realParent = await fs.realpath(parent);
+    if (realParent !== workspace && !realParent.startsWith(`${workspace}${path.sep}`)) {
+      throw new Error("Resolved parent is outside the project workspace");
+    }
+  }
+
+  const existing = await fs.lstat(absolute).catch(() => null);
+  if (existing?.isSymbolicLink()) throw new Error("Symbolic links cannot be overwritten");
+  if (existing && !existing.isFile()) throw new Error("Only regular workspace files can be replaced");
+
+  // Write beside the destination, then rename into place. Readers see either
+  // the previous complete file or the new complete file, never a partial save.
+  const temporary = path.join(parent, `.voh-write-${crypto.randomUUID()}.tmp`);
+  try {
+    await fs.writeFile(temporary, content, { encoding: "utf8", flag: "wx", mode: existing ? existing.mode & 0o777 : 0o600 });
+    await fs.rename(temporary, absolute);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+
+  await upsertProjectFile({
+    projectId,
+    path: safe,
+    language: path.extname(safe).slice(1) || undefined,
+    contentHash: crypto.createHash("sha256").update(content).digest("hex"),
+    size,
+    content,
+    lastOperation,
+  });
+  return { path: safe, size };
 }
 
 export async function inspectWorkspace(projectId: number) { const files = await listWorkspaceFiles(projectId); return { files, hasPackageManifest: Boolean(files.find(file => file.path === "package.json")), summary: `${files.filter(file => file.kind === "file").length} files indexed` }; }
