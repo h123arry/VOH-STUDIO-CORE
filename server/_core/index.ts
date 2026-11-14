@@ -9,6 +9,7 @@ import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
 import { getProjectForOwner } from "../domain/project-service";
 import { readWorkspaceAsset } from "../tools/workspace-tools";
+import { PREVIEW_SECURITY_HEADERS, previewContentType } from "../tools/preview-assets";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -53,8 +54,10 @@ async function startServer() {
       if (!await getProjectForOwner(context.user.id, projectId)) return res.status(404).json({ error: "Project not found" });
       const relativePath = typeof req.params[1] === "string" && req.params[1] ? decodeURIComponent(req.params[1]) : "index.html";
       const asset = await readWorkspaceAsset(projectId, relativePath);
-      const contentType = relativePath.endsWith(".html") ? "text/html" : relativePath.endsWith(".css") ? "text/css" : relativePath.endsWith(".js") ? "text/javascript" : "application/octet-stream";
-      return res.type(contentType).send(asset.content);
+      res.set(PREVIEW_SECURITY_HEADERS);
+      res.set("Cache-Control", "no-store");
+      res.set("Content-Type", previewContentType(relativePath));
+      return res.send(asset.content);
     } catch (error) {
       return res.status(404).json({ error: error instanceof Error ? error.message : "Preview asset not found" });
     }
