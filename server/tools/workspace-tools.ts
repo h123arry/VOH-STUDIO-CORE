@@ -37,7 +37,20 @@ const assertAbsoluteInside = (workspace: string, absolute: string) => { if (abso
 const assertRealInside = async (workspace: string, absolute: string) => { const real = await fs.realpath(absolute); if (real !== workspace && !real.startsWith(`${workspace}${path.sep}`)) throw new Error("Resolved path is outside the project workspace"); return real; };
 
 export const projectWorkspace = (projectId: number) => path.join(ROOT, `project-${projectId}`);
-export async function ensureWorkspace(projectId: number) { const workspace = projectWorkspace(projectId); await fs.mkdir(workspace, { recursive: true }); return workspace; }
+export async function ensureWorkspace(projectId: number) {
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new Error("Invalid project workspace identifier");
+  await fs.mkdir(ROOT, { recursive: true });
+  const rootStat = await fs.lstat(ROOT);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error("Workspace root must be a real directory");
+  const realRoot = await fs.realpath(ROOT);
+  const workspace = projectWorkspace(projectId);
+  await fs.mkdir(workspace, { recursive: true });
+  const workspaceStat = await fs.lstat(workspace);
+  if (workspaceStat.isSymbolicLink() || !workspaceStat.isDirectory()) throw new Error("Project workspace must be a real directory, not a symbolic link");
+  const realWorkspace = await fs.realpath(workspace);
+  if (realWorkspace !== path.join(realRoot, `project-${projectId}`)) throw new Error("Project workspace resolves outside the configured workspace root");
+  return workspace;
+}
 
 export async function listWorkspaceFiles(projectId: number) {
   const workspace = await ensureWorkspace(projectId); const results: Array<{ path: string; size: number; kind: "file" | "directory" }> = [];
