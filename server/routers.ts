@@ -7,7 +7,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { AGENT_REGISTRY } from "./agents/registry";
 import { createProject, getProjectForOwner, listProjectFiles, listProjects, updateProjectSettings, updateProjectTask } from "./domain/project-service";
 import { buildProjectMemory, containsSensitiveValue } from "./domain/project-memory";
-import { compareProjectSnapshot, createProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from "./domain/snapshot-service";
+import { compareProjectSnapshot, createProjectSnapshot, deleteProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from "./domain/snapshot-service";
 import { listArtifacts } from "./domain/artifact-service";
 import { appendTaskEvent, approveTaskPlan, createTask, getTaskForOwner, listAgentRuns, listErrors, listQueuedInstructions, listTaskEvents, listTaskSteps, listTasks, listToolCalls, listVerifications, markInstruction, queueTaskInstruction, updateTask } from "./domain/task-service";
 import { cancelTaskExecution, startTask } from "./orchestrator/orchestrator";
@@ -88,6 +88,7 @@ export const appRouter = router({
     snapshots: router({
       compare: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), snapshotId: z.number().int().positive() })).query(async ({ ctx, input }) => { if (!await getProjectForOwner(ctx.user.id, input.projectId)) throw new Error("Project not found"); return compareProjectSnapshot(input.projectId, input.snapshotId); }),
       restore: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), snapshotId: z.number().int().positive(), confirm: z.literal(true) })).mutation(async ({ ctx, input }) => { if (!await getProjectForOwner(ctx.user.id, input.projectId)) throw new Error("Project not found"); return restoreProjectSnapshot(input.projectId, input.snapshotId); }),
+      delete: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), snapshotId: z.number().int().positive(), confirm: z.literal(true) })).mutation(async ({ ctx, input }) => { if (!await getProjectForOwner(ctx.user.id, input.projectId)) throw new Error("Project not found"); return deleteProjectSnapshot(input.projectId, input.snapshotId); }),
     }),
   }),
 
