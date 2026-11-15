@@ -1,4 +1,5 @@
 import { listProjectFiles } from "../domain/project-service";
+import { isSafeProjectContextFile } from "../security/project-content";
 
 type IndexedFile = { path: string; content: string; language: string | null; size: number; terms: string[] };
 type ContextIndex = { createdAt: number; files: IndexedFile[]; architecture: string[]; dependencies: string[]; routes: string[]; symbols: string[] };
@@ -13,7 +14,7 @@ const extract = (files: IndexedFile[]) => {
 };
 export async function indexProjectContext(projectId: number, force = false) {
   const existing = cache.get(projectId); if (existing && !force && Date.now() - existing.createdAt < 30_000) return existing;
-  const files = (await listProjectFiles(projectId)).map(file => ({ path: file.path, content: file.content ?? "", language: file.language, size: file.size, terms: tokenise(`${file.path} ${file.content ?? ""}`) }));
+  const files = (await listProjectFiles(projectId)).filter(file => isSafeProjectContextFile(file.path, file.content ?? "")).map(file => ({ path: file.path, content: file.content ?? "", language: file.language, size: file.size, terms: tokenise(`${file.path} ${file.content ?? ""}`) }));
   const index = { createdAt: Date.now(), files, ...extract(files) }; cache.set(projectId, index); return index;
 }
 export async function retrieveProjectContext(projectId: number, query: string, limit = 12) {
