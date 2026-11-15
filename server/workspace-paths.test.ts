@@ -1,7 +1,38 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, readWorkspaceAsset, readWorkspaceFile, readWorkspaceFileBuffer, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, readWorkspaceAsset, readWorkspaceFile, readWorkspaceFileBuffer, buildDockerSandboxArgs, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+
+describe("Docker sandbox execution policy", () => {
+  it("builds a network-isolated, resource-limited container command", () => {
+    const args = buildDockerSandboxArgs({
+      workspace: "/srv/voh/workspaces/project-7",
+      executable: "pnpm",
+      args: ["build"],
+      containerName: "voh-7-12345678-1234-1234-1234-123456789abc",
+      uid: 1000,
+      gid: 1000,
+    });
+    expect(args).toContain("--network=none");
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--cap-drop=ALL");
+    expect(args).toContain("--security-opt=no-new-privileges");
+    expect(args).toContain("--pids-limit=128");
+    expect(args).toContain("--memory=512m");
+    expect(args).toContain("--cpus=1");
+    expect(args).toContain("--workdir");
+    expect(args).toContain("/workspace");
+    expect(args).not.toContain("/var/run/docker.sock");
+    expect(args).toContain("pnpm");
+  });
+
+  it("rejects unsafe mount paths, image references and executable names", () => {
+    const base = { workspace: "/srv/voh/project", executable: "node", args: ["scripts/test.mjs"], containerName: "voh-7-12345678-1234-1234-1234-123456789abc" };
+    expect(() => buildDockerSandboxArgs({ ...base, workspace: "/srv/voh,project" })).toThrow("mounted safely");
+    expect(() => buildDockerSandboxArgs({ ...base, image: "--privileged" })).toThrow("image reference");
+    expect(() => buildDockerSandboxArgs({ ...base, executable: "sh" })).toThrow("not permitted");
+  });
+});
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {

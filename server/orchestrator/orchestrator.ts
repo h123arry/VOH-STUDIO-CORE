@@ -249,7 +249,7 @@ export async function runTask(taskId: number, ownerId: number) {
     await appendTaskEvent({ taskId, eventType: "workspace.inspected", actor: "architect", phase: "inspect", summary: inspection.summary, metadata: { files: inspection.files.slice(0, 60), runtime: template.runtime } });
     await recordVerification({ taskId, kind: "workspace", command: "filesystem inspection", status: "passed", output: inspection.summary, artifact: ".voh/project.json", durationMs: 8 });
 
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && process.env.VOH_DOCKER_EXECUTOR_ENABLED !== "true") {
       await setProgress(task.id, 40, "inspect", "qa");
       const staticResult = await verifyWorkspaceStatically(project.id);
       await recordVerification({ taskId, kind: "static", command: "non-executing source validation", status: staticResult.status, output: staticResult.output, durationMs: staticResult.durationMs });
