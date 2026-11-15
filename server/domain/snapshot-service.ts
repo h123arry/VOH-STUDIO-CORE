@@ -9,6 +9,7 @@ import { getDb } from "../db";
 import { ensureWorkspace, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, snapshotWorkspace } from "../tools/workspace-tools";
 import { compareSnapshotFileHashes } from "./snapshot-diff";
 import { restoreWorkspaceDirectoryAtomically } from "./snapshot-restore";
+import { deleteSnapshotDirectoryAtomically } from "./snapshot-delete";
 import { assertSnapshotTreeHasNoSymlinks, resolveSnapshotDirectory } from "./snapshot-paths";
 
 const ROOT = path.resolve(
@@ -45,6 +46,16 @@ export async function listProjectSnapshots(projectId: number) {
     .orderBy(desc(projectSnapshots.createdAt));
 }
 
+async function resolveProjectSnapshotDirectory(projectId: number, snapshotPath: string) {
+  const expectedParent = path.resolve(ROOT, "snapshots", `project-${projectId}`);
+  const candidate = path.resolve(ROOT, snapshotPath);
+  const relative = path.relative(expectedParent, candidate);
+  if (!relative || path.isAbsolute(relative) || relative.includes(path.sep) || !/^[A-Za-z0-9_-]{1,80}$/.test(relative)) {
+    throw new Error("Snapshot path does not belong to this project");
+  }
+  return resolveSnapshotDirectory(ROOT, snapshotPath);
+}
+
 export async function restoreProjectSnapshot(
   projectId: number,
   snapshotId: number
@@ -64,7 +75,7 @@ export async function restoreProjectSnapshot(
       .limit(1)
   )[0];
   if (!row) throw new Error("Snapshot not found");
-  const source = await resolveSnapshotDirectory(ROOT, row.snapshotPath);
+  const source = await resolveProjectSnapshotDirectory(projectId, row.snapshotPath);
   await assertSnapshotTreeHasNoSymlinks(source);
 
   const workspace = await ensureWorkspace(projectId);
@@ -140,7 +151,7 @@ export async function compareProjectSnapshot(
       .limit(1)
   )[0];
   if (!row) throw new Error("Snapshot not found");
-  const source = await resolveSnapshotDirectory(ROOT, row.snapshotPath);
+  const source = await resolveProjectSnapshotDirectory(projectId, row.snapshotPath);
   await assertSnapshotTreeHasNoSymlinks(source);
   const workspace = await ensureWorkspace(projectId);
   const [snapshotHashes, currentHashes] = await Promise.all([
@@ -193,4 +204,23 @@ async function listRelativeFiles(root: string) {
   };
   await walk(root);
   return output.sort();
+}
+
+export async function deleteProjectSnapshot(projectId: number, snapshotId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const row = (
+    await db
+      .select()
+      .from(projectSnapshots)
+      .where(and(eq(projectSnapshots.id, snapshotId), eq(projectSnapshots.projectId, projectId)))
+      .limit(1)
+  )[0];
+  if (!row) throw new Error("Snapshot not found");
+  const source = await resolveProjectSnapshotDirectory(projectId, row.snapshotPath);
+  const tombstone = path.join(path.dirname(source), `.${path.basename(source)}.delete-${crypto.randomUUID()}`);
+  await deleteSnapshotDirectoryAtomically(source, tombstone, async () => {
+    await db.delete(projectSnapshots).where(and(eq(projectSnapshots.id, snapshotId), eq(projectSnapshots.projectId, projectId)));
+  });
+  return { deleted: true, snapshotId };
 }
