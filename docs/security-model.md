@@ -6,6 +6,6 @@ Project command execution is disabled whenever `NODE_ENV=production`. The server
 
 A production execution service must be a separate isolated runtime (dedicated container or VM) with non-root execution, filesystem and process isolation, CPU/memory/time quotas, controlled network egress, ephemeral credentials, and bounded artifact transfer. Build, test, and terminal tools remain unavailable to agents until that runtime is implemented and verified.
 
-Authentication uses the initialized OAuth flow. Project and task queries are owner-scoped. Model calls use server-side platform credentials and never expose them to the browser. The UI displays safe result summaries and does not expose hidden chain-of-thought.
+Authentication uses the initialized OAuth flow. Project and task queries are owner-scoped. Sensitive project paths and content matching credential patterns are excluded before project memory and relevant-file context are sent to model providers. This is an AI-context filter, not a secrets vault: project files remain stored in the workspace and may be visible to the authenticated project owner. Do not store live credentials in project files. Model calls use server-side platform credentials and never expose them to the browser. The UI displays safe result summaries and does not expose hidden chain-of-thought.
 
 Production deployment and arbitrary package installation remain separate approval-gated capabilities; neither is enabled by this workspace command runner.
