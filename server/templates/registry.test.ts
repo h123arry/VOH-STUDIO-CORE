@@ -79,6 +79,32 @@ describe("mobile starter template", () => {
     }
   });
 
+  it("generates a secure server-backed AI chat app with provider secrets kept server-side", async () => {
+    const template = getTemplate("ai_app")!;
+    const files = template.files({ ...project, projectType: "ai_app", name: "VOH Assistant" }, "A private AI assistant");
+    const byPath = new Map(files.map(file => [file.path, file.content]));
+    expect(byPath.has(".env.example")).toBe(true);
+    expect(byPath.get(".gitignore")).toContain(".env");
+    expect(byPath.get("public/main.js")).not.toContain("AI_API_KEY");
+    expect(byPath.get("src/server.mjs")).toContain("process.env.AI_API_KEY");
+    expect(byPath.get("src/server.mjs")).toContain("validateMessages");
+    expect(byPath.get("src/server.mjs")).toContain("rateLimited");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-ai-app-"));
+    try {
+      for (const file of files) {
+        const destination = path.join(root, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(destination, file.content, "utf8");
+      }
+      await execFileAsync(process.execPath, ["scripts/test.mjs"], { cwd: root, timeout: 10_000 });
+      await execFileAsync(process.execPath, ["scripts/build.mjs"], { cwd: root, timeout: 10_000 });
+      await expect(fs.access(path.join(root, "dist/index.html"))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(root, "src/server.mjs"))).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the generated website smoke test and builds its browser assets", async () => {
     const template = getTemplate("website")!;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-website-template-"));
