@@ -55,3 +55,26 @@ describe("additional provider credential patterns", () => {
     expect(containsSensitiveValue('const themeKey = "dark-mode";')).toBe(false);
   });
 });
+
+
+describe("additional secret storage and credential formats", () => {
+  it.each([
+    [".docker/config.json", "Docker registry config"],
+    [".kube/config", "Kubernetes credentials"],
+    [".terraform/terraform.tfstate", "Terraform state"],
+    ["terraform.tfstate.backup", "Terraform state backup"],
+    [".git-credentials", "Git credentials"],
+    [".vault-token", "Vault token"],
+    [".config/gh/hosts.yml", "GitHub CLI credentials"],
+    [".envrc", "direnv environment file"],
+  ])("recognizes sensitive storage path %s", filePath => {
+    expect(isSensitiveProjectPath(filePath)).toBe(true);
+  });
+
+  it("recognizes credentials embedded in service URLs and basic auth headers", () => {
+    const url = "https://deploy-user:" + "p".repeat(24) + "@registry.example";
+    const basicAuth = "Authorization: Basic " + "Q".repeat(32);
+    expect(containsSensitiveValue(url)).toBe(true);
+    expect(containsSensitiveValue(basicAuth)).toBe(true);
+  });
+});
