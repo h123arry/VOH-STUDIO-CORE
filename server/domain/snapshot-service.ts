@@ -21,10 +21,11 @@ export async function createProjectSnapshot(input: {
   taskId?: number;
   reason: string;
 }) {
-  const snapshotId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const snapshot = await snapshotWorkspace(input.projectId, snapshotId);
   const db = await getDb();
-  if (db) {
+  if (!db) throw new Error("Database is not available");
+  const snapshotId = crypto.randomUUID();
+  const snapshot = await snapshotWorkspace(input.projectId, snapshotId);
+  try {
     await db.insert(projectSnapshots).values({
       projectId: input.projectId,
       taskId: input.taskId,
@@ -32,6 +33,10 @@ export async function createProjectSnapshot(input: {
       snapshotPath: snapshot.snapshotPath,
       fileCount: snapshot.fileCount,
     });
+  } catch (error) {
+    const snapshotDirectory = await resolveProjectSnapshotDirectory(input.projectId, snapshot.snapshotPath).catch(() => null);
+    if (snapshotDirectory) await fs.rm(snapshotDirectory, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
   return { ...snapshot, snapshotId };
 }
