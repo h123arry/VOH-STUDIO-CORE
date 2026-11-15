@@ -1,13 +1,35 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { Project } from "../drizzle/schema";
 import { getTemplate } from "./registry";
 
 const execFileAsync = promisify(execFile);
+async function getFreePort() {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => server.listen(0, "127.0.0.1", error => error ? reject(error) : resolve()));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Could not allocate a test port");
+  const port = address.port;
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  return port;
+}
+async function waitForHttp(url: string, child: ReturnType<typeof spawn>) {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (child.exitCode !== null) throw new Error("Generated application exited before becoming ready");
+    try { return await fetch(url); } catch { await new Promise(resolve => setTimeout(resolve, 50)); }
+  }
+  throw new Error("Generated application did not start in time");
+}
+async function stopProcess(child: ReturnType<typeof spawn>) {
+  if (child.exitCode !== null) return;
+  await new Promise<void>(resolve => { child.once("exit", () => resolve()); child.kill("SIGTERM"); });
+}
+
 const project = {
   id: 1,
   ownerId: 1,
@@ -125,6 +147,57 @@ describe("mobile starter template", () => {
       await execFileAsync(process.execPath, ["scripts/test.mjs"], { cwd: root, timeout: 15_000 });
       await execFileAsync(process.execPath, ["scripts/build.mjs"], { cwd: root, timeout: 10_000 });
       await expect(fs.access(path.join(root, "dist/index.html"))).resolves.toBeUndefined();
+
+      const port = await getFreePort();
+      const baseUrl = "http://127.0.0.1:" + port;
+      const startServer = () => spawn(process.execPath, ["src/server.mjs"], {
+        cwd: root,
+        env: { ...process.env, PORT: String(port), NODE_ENV: "test", VOH_DB_PATH: path.join(root, "data", "integration.sqlite") },
+        stdio: "ignore",
+      });
+      let child = startServer();
+      try {
+        const ready = await waitForHttp(baseUrl + "/api/me", child);
+        expect(ready.status).toBe(200);
+        expect((await ready.json()).user).toBeNull();
+        const crossOrigin = await fetch(baseUrl + "/api/register", { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ email: "bad@example.com", password: "correct horse battery" }) });
+        expect(crossOrigin.status).toBe(403);
+
+        const register = async (email: string) => {
+          const response = await fetch(baseUrl + "/api/register", { method: "POST", headers: { origin: baseUrl, "content-type": "application/json" }, body: JSON.stringify({ email, password: "correct horse battery" }) });
+          expect(response.status).toBe(200);
+          return response.headers.get("set-cookie")!.split(";")[0];
+        };
+        const firstCookie = await register("first@example.com");
+        const secondCookie = await register("second@example.com");
+        const call = (route: string, cookie: string, method = "GET", payload?: unknown) => fetch(baseUrl + route, {
+          method,
+          headers: { origin: baseUrl, cookie, "content-type": "application/json" },
+          ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        });
+        expect((await fetch(baseUrl + "/api/tasks")).status).toBe(401);
+        const created = await call("/api/tasks", firstCookie, "POST", { title: "Persist my work" });
+        expect(created.status).toBe(201);
+        const task = await created.json() as { id: number; title: string; done: number };
+        expect(task.title).toBe("Persist my work");
+        expect((await call("/api/tasks", secondCookie)).status).toBe(200);
+        expect(await (await call("/api/tasks", secondCookie)).json()).toEqual([]);
+        const forbiddenUpdate = await call("/api/tasks/" + task.id, secondCookie, "PATCH", { done: true });
+        expect(forbiddenUpdate.status).toBe(404);
+        const updated = await call("/api/tasks/" + task.id, firstCookie, "PATCH", { done: true });
+        expect((await updated.json()).done).toBe(1);
+        await stopProcess(child);
+        child = startServer();
+        await waitForHttp(baseUrl + "/api/me", child);
+        const afterRestart = await call("/api/tasks", firstCookie);
+        expect(await afterRestart.json()).toMatchObject([{ id: task.id, title: "Persist my work", done: 1 }]);
+        const deleted = await call("/api/tasks/" + task.id, firstCookie, "DELETE");
+        expect(deleted.status).toBe(200);
+        await call("/api/logout", firstCookie, "POST", {});
+        expect((await call("/api/tasks", firstCookie)).status).toBe(401);
+      } finally {
+        await stopProcess(child);
+      }
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
