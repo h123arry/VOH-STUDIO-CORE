@@ -1,6 +1,6 @@
 import type { Project } from "../../drizzle/schema";
 
-export type TemplateKind = "website" | "web_app" | "mobile" | "game" | "api" | "backend" | "automation" | "dashboard" | "saas";
+export type TemplateKind = "website" | "web_app" | "mobile" | "native_mobile" | "game" | "api" | "backend" | "automation" | "dashboard" | "saas";
 export type TemplateFile = { path: string; content: string };
 export type ProjectTemplate = { kind: TemplateKind; name: string; runtime: string; buildCommand: string; testCommand: string; files: (project: Project, objective: string) => TemplateFile[] };
 
@@ -188,6 +188,56 @@ const mobileFiles = (project: Project, objective: string): TemplateFile[] => {
   ]);
 };
 
+const nativeMobileFiles = (project: Project, objective: string): TemplateFile[] => {
+  const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) || "voh-app";
+  const bundle = "com.vohstudio." + slug.replace(/-/g, "");
+  const app = `import { useEffect, useState } from "react";
+import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { StatusBar } from "expo-status-bar";
+type Note = { id: string; text: string };
+type Screen = "home" | "notes" | "profile";
+const KEY = "voh-notes-v1";
+export default function App() {
+  const [screen, setScreen] = useState<Screen>("home");
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [draft, setDraft] = useState("");
+  const [ready, setReady] = useState(false);
+  useEffect(() => { AsyncStorage.getItem(KEY).then(value => { if (value) setNotes(JSON.parse(value)); }).finally(() => setReady(true)); }, []);
+  const save = async (next: Note[]) => { setNotes(next); await AsyncStorage.setItem(KEY, JSON.stringify(next)); };
+  const add = () => { const text = draft.trim(); if (!text) return; void save([{ id: String(Date.now()), text }, ...notes]); setDraft(""); };
+  return <SafeAreaView style={styles.safe}>
+    <StatusBar style="dark" />
+    <View style={styles.header}><Text style={styles.brand}>{${JSON.stringify(project.name)}}</Text><Text style={styles.caption}>Powered by VOH</Text></View>
+    <ScrollView contentContainerStyle={styles.content}>
+      {screen === "home" && <View><Text style={styles.eyebrow}>YOUR SPACE</Text><Text style={styles.title}>A little more organised.</Text><Text style={styles.body}>{${JSON.stringify(objective)}}</Text><Text style={styles.count}>{notes.length} saved notes</Text><TouchableOpacity style={styles.primary} onPress={() => setScreen("notes")}><Text style={styles.primaryText}>Open my notes</Text></TouchableOpacity></View>}
+      {screen === "notes" && <View><Text style={styles.eyebrow}>PERSONAL NOTES</Text><Text style={styles.title}>Keep the important things.</Text><TextInput value={draft} onChangeText={setDraft} placeholder="Write a note..." multiline style={styles.input}/><TouchableOpacity style={styles.primary} onPress={add}><Text style={styles.primaryText}>Save note</Text></TouchableOpacity>{ready && notes.map(note => <View key={note.id} style={styles.note}><Text style={styles.noteText}>{note.text}</Text><TouchableOpacity onPress={() => void save(notes.filter(item => item.id !== note.id))}><Text style={styles.delete}>Delete</Text></TouchableOpacity></View>)}</View>}
+      {screen === "profile" && <View><Text style={styles.eyebrow}>PROFILE</Text><Text style={styles.title}>Your app, your space.</Text><Text style={styles.body}>Notes are stored locally on this device. Add authentication and a remote backend for accounts and cross-device sync.</Text></View>}
+    </ScrollView>
+    <View style={styles.tabs}>{(["home", "notes", "profile"] as Screen[]).map(item => <TouchableOpacity key={item} onPress={() => setScreen(item)} style={styles.tab}><Text style={screen === item ? styles.active : styles.tabText}>{item.toUpperCase()}</Text></TouchableOpacity>)}</View>
+  </SafeAreaView>;
+}
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#f7f6f3" }, header: { padding: 20, borderBottomWidth: 1, borderColor: "#e6e3dd", flexDirection: "row", justifyContent: "space-between" }, brand: { fontSize: 18, fontWeight: "800", color: "#242238" }, caption: { color: "#777483", fontSize: 11 }, content: { padding: 24, flexGrow: 1 }, eyebrow: { color: "#7055b6", fontWeight: "800", letterSpacing: 2, fontSize: 10 }, title: { color: "#242238", fontWeight: "800", fontSize: 32, marginVertical: 16 }, body: { color: "#686777", lineHeight: 24 }, count: { color: "#4d32a8", fontWeight: "800", fontSize: 22, marginVertical: 20 }, primary: { backgroundColor: "#4d32a8", padding: 15, borderRadius: 8, alignItems: "center", marginVertical: 12 }, primaryText: { color: "white", fontWeight: "700" }, input: { minHeight: 100, backgroundColor: "white", borderColor: "#dcd8e2", borderWidth: 1, borderRadius: 8, padding: 12, textAlignVertical: "top" }, note: { padding: 14, backgroundColor: "white", borderRadius: 8, marginTop: 10, flexDirection: "row", justifyContent: "space-between", gap: 12 }, noteText: { flex: 1, color: "#33313d" }, delete: { color: "#9c3d45", fontWeight: "700" }, tabs: { flexDirection: "row", borderTopWidth: 1, borderColor: "#e6e3dd", padding: 16, backgroundColor: "white" }, tab: { flex: 1, alignItems: "center" }, tabText: { color: "#8b8893", fontSize: 10, fontWeight: "700" }, active: { color: "#4d32a8", fontSize: 10, fontWeight: "800" }
+});
+`;
+  const packageFile = JSON.stringify({
+    name: slug + "-mobile", version: "1.0.0", private: true,
+    scripts: { start: "expo start", android: "expo run:android", ios: "expo run:ios", web: "expo start --web", build: "expo export --platform android", test: "node scripts/verify-source.mjs", typecheck: "tsc --noEmit" },
+    dependencies: { expo: "latest", react: "latest", "react-native": "latest", "expo-status-bar": "latest", "@react-native-async-storage/async-storage": "latest" },
+    devDependencies: { typescript: "latest", "@types/react": "latest" }
+  }, null, 2) + "\n";
+  const config = JSON.stringify({ expo: { name: project.name, slug, version: "1.0.0", orientation: "portrait", userInterfaceStyle: "light", ios: { supportsTablet: true, bundleIdentifier: bundle }, android: { package: bundle }, plugins: ["@react-native-async-storage/async-storage"] } }, null, 2) + "\n";
+  return [
+    { path: "package.json", content: packageFile },
+    { path: "app.json", content: config },
+    { path: "tsconfig.json", content: JSON.stringify({ extends: "expo/tsconfig.base", compilerOptions: { strict: true } }, null, 2) + "\n" },
+    { path: "App.tsx", content: app },
+    { path: "scripts/verify-source.mjs", content: "import assert from 'node:assert/strict';import fs from 'node:fs';const app=fs.readFileSync('App.tsx','utf8');const config=JSON.parse(fs.readFileSync('app.json','utf8')).expo;const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));assert.ok(app.includes('AsyncStorage.setItem'));assert.ok(app.includes('AsyncStorage.getItem'));assert.ok(app.includes('type Screen'));assert.ok(app.includes('notes.filter'));assert.ok(config.android.package&&config.ios.bundleIdentifier);assert.ok(pkg.dependencies.expo&&pkg.dependencies['react-native']);console.log('Native mobile source checks passed. No APK or IPA is produced by this source validation.');\n" },
+    { path: "README.md", content: "# " + project.name + "\n\nExpo + React Native native application source scaffold.\n\nObjective: " + objective + "\n\n## Setup\n\n1. Install Node.js and a package manager.\n2. Run pnpm install.\n3. Run npx expo install --fix to align React Native packages with the installed Expo SDK.\n4. Run pnpm start and open the project in Expo Go or a development build.\n5. Use pnpm android or pnpm ios with the matching native toolchain.\n\n## Build status\n\nThis workspace contains native React Native source and Android/iOS bundle identifiers. The configured build exports an Android JavaScript bundle; it does not create an installable APK. APK/IPA generation requires an EAS build configuration and credentials or a local Android/iOS toolchain. Local notes use AsyncStorage and stay on this device; authentication and remote sync are not configured.\n" },
+  ];
+};
+
 const apiFiles = (project: Project, objective: string): TemplateFile[] => [
   { path: "package.json", content: packageJson(project.name, { build: "node scripts/check.mjs", test: "node scripts/check.mjs", start: "node src/server.mjs" }) },
   { path: "src/server.mjs", content: `import { createServer } from 'node:http';\nconst service = ${JSON.stringify(project.name)};\nconst objective = ${JSON.stringify(objective)};\ncreateServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ service, objective, status: 'ok' })); }).listen(4173, () => console.log('API listening on 4173'));\n` },
@@ -199,6 +249,7 @@ const templates: ProjectTemplate[] = [
   { kind: "website", name: "Responsive multi-page business website", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: websiteFiles },
   { kind: "web_app", name: "Browser application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
   { kind: "mobile", name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser", buildCommand: "pnpm build", testCommand: "pnpm test", files: mobileFiles },
+  { kind: "native_mobile", name: "Expo and React Native native app source", runtime: "Expo / React Native", buildCommand: "pnpm build", testCommand: "pnpm test", files: nativeMobileFiles },
   { kind: "game", name: "2D browser game", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: gameFiles },
   { kind: "dashboard", name: "Dashboard", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
   { kind: "saas", name: "SaaS application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },

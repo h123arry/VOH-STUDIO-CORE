@@ -55,6 +55,30 @@ describe("mobile starter template", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+  it("creates an Expo React Native source project with persistent local notes and honest binary status", async () => {
+    const template = getTemplate("native_mobile")!;
+    expect(template.name).toContain("React Native");
+    const files = template.files(project, "A personal mobile planner");
+    const paths = files.map(file => file.path);
+    expect(paths).toEqual(expect.arrayContaining(["App.tsx", "app.json", "package.json", "tsconfig.json", "scripts/verify-source.mjs", "README.md"]));
+    const app = files.find(file => file.path === "App.tsx")!.content;
+    expect(app).toContain("AsyncStorage.setItem");
+    expect(app).toContain("AsyncStorage.getItem");
+    const readme = files.find(file => file.path === "README.md")!.content;
+    expect(readme).toContain("does not create an installable APK");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-native-mobile-"));
+    try {
+      for (const file of files) {
+        const destination = path.join(root, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(destination, file.content, "utf8");
+      }
+      await execFileAsync(process.execPath, ["scripts/verify-source.mjs"], { cwd: root, timeout: 10_000 });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the generated website smoke test and builds its browser assets", async () => {
     const template = getTemplate("website")!;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-website-template-"));
