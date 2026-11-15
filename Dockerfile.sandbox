@@ -1,3 +1,4 @@
 FROM node:22-alpine
 RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
+ENV PNPM_DISABLE_SELF_UPDATE_CHECK=true
 WORKDIR /workspace
