@@ -4,6 +4,7 @@ const sensitivePathPatterns = [
   /(^|\/)\.(?:npmrc|pypirc|netrc)$/i,
   /(^|\/)(?:credentials?(?:\.json)?|service[-_]?account(?:[-_][^/]*)?\.json|firebase-adminsdk[^/]*\.json)(\/|$)/i,
   /(^|\/)(?:\.ssh|\.aws|\.azure|\.gcloud|secrets?)(\/|$)/i,
+  /(^|\/)(?:secrets?|credentials?)(?:\.[^/]*)?$/i,
   /(^|\/)(?:id_rsa|id_ed25519|id_ecdsa)(?:\.pub)?$/i,
   /\.(?:pem|key|p12|pfx|jks|keystore)$/i,
 ];
