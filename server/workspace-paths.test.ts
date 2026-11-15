@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, readWorkspaceAsset, readWorkspaceFile, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, readWorkspaceAsset, readWorkspaceFile, readWorkspaceFileBuffer, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -58,6 +58,38 @@ describe("safe workspace file reads", () => {
       await fs.symlink(path.join(root, "real"), path.join(root, "linked"), "dir");
       await expect(readWorkspaceFile(projectId, "linked/secret.txt")).rejects.toThrow("Symbolic links are not readable");
       await expect(readWorkspaceAsset(projectId, "linked/secret.txt")).rejects.toThrow("Symbolic links are not readable");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("snapshot-safe workspace reads", () => {
+  it("reads snapshot sources through the verified file handle", async () => {
+    const projectId = 8_960_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "src"), { recursive: true });
+      await fs.writeFile(path.join(root, "src", "large-source.ts"), Buffer.alloc(80_000, 65));
+      const result = await readWorkspaceFileBuffer(projectId, "src/large-source.ts", 100_000);
+      expect(result.size).toBe(80_000);
+      expect(result.content.length).toBe(80_000);
+      await expect(readWorkspaceFileBuffer(projectId, "src/large-source.ts", 70_000)).rejects.toThrow("read size limit");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects snapshot reads through symlinked parent directories", async () => {
+    const projectId = 8_970_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "real"), { recursive: true });
+      await fs.writeFile(path.join(root, "real", "secret.txt"), "private");
+      await fs.symlink(path.join(root, "real"), path.join(root, "linked"), "dir");
+      await expect(readWorkspaceFileBuffer(projectId, "linked/secret.txt")).rejects.toThrow("Symbolic links are not readable");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
