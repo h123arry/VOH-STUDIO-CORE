@@ -47,3 +47,16 @@ See [docs/operator-guide.md](docs/operator-guide.md) for execution modes, reposi
 This project retains the platform's existing auth, storage, model, and runtime boundaries. `server/_core/publicConfig.ts` exposes only named public runtime values; private keys stay server-side. The platform serves managed `/manus-storage/` assets, so the application does not register a second storage proxy.
 
 Platform configuration is readable and editable through `webdev.config`. Default settings are initial values, not enforced constraints.
+
+
+## Isolated project execution
+
+Production project commands remain disabled unless the Docker sandbox is explicitly configured. Build the dedicated image from the repository root:
+
+```sh
+docker build -f Dockerfile.sandbox -t voh-studio-sandbox:node22 .
+```
+
+Then set `VOH_DOCKER_EXECUTOR_ENABLED=true` and optionally `VOH_SANDBOX_IMAGE`. The runner mounts only the individual project workspace, disables networking, uses a read-only container root, drops Linux capabilities, enables no-new-privileges, and applies CPU, memory, PID, file-descriptor and temporary-filesystem limits. The Docker socket is never mounted into project containers.
+
+Dependency installation remains blocked for projects with external packages. The network-isolated runner can build and test dependency-free starters; mobile and desktop packages still need an approved dependency-install path and their platform toolchains.

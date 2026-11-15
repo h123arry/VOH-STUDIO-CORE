@@ -268,13 +268,63 @@ async function validateCommand(cwd: string, command: string) {
   throw new Error("Command is not on the allowed workspace command list");
 }
 
+export function buildDockerSandboxArgs(input: {
+  workspace: string;
+  executable: string;
+  args: string[];
+  containerName: string;
+  image?: string;
+  uid?: number;
+  gid?: number;
+}) {
+  const workspace = path.resolve(input.workspace);
+  if (!path.isAbsolute(workspace) || workspace.includes(":") || workspace.includes(",")) throw new Error("Workspace path cannot be mounted safely into the sandbox");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,199}$/.test(input.image ?? "voh-studio-sandbox:node22")) throw new Error("Invalid sandbox image reference");
+  if (!/^voh-[0-9]+-[a-f0-9-]{36}$/.test(input.containerName)) throw new Error("Invalid sandbox container name");
+  if (!["pnpm", "node", "git", "python", "python3"].includes(input.executable)) throw new Error("Executable is not permitted in the sandbox");
+  const uid = input.uid ?? (typeof process.getuid === "function" ? process.getuid() : 1000);
+  const gid = input.gid ?? (typeof process.getgid === "function" ? process.getgid() : 1000);
+  return [
+    "run", "--rm", "--init", "--name", input.containerName,
+    "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    "--pids-limit=128", "--memory=512m", "--memory-swap=512m", "--cpus=1",
+    "--ulimit", "nofile=1024:1024", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+    "--volume", workspace + ":/workspace:rw", "--workdir", "/workspace",
+    "--user", uid + ":" + gid,
+    "--env", "HOME=/tmp", "--env", "NODE_ENV=test", "--env", "COREPACK_ENABLE_NETWORK=0",
+    "--env", "PATH=/usr/local/bin:/usr/bin:/bin",
+    input.image ?? "voh-studio-sandbox:node22",
+    input.executable, ...input.args,
+  ];
+}
+
+async function runInDockerSandbox(cwd: string, safe: { executable: string; args: string[] }, projectId: number, timeout: number, signal?: AbortSignal) {
+  if (process.env.VOH_DOCKER_EXECUTOR_ENABLED !== "true") throw new Error("Production project execution is disabled. Configure the Docker sandbox and set VOH_DOCKER_EXECUTOR_ENABLED=true.");
+  const containerName = "voh-" + projectId + "-" + crypto.randomUUID();
+  const args = buildDockerSandboxArgs({
+    workspace: cwd,
+    executable: safe.executable,
+    args: safe.args,
+    containerName,
+    image: process.env.VOH_SANDBOX_IMAGE || "voh-studio-sandbox:node22",
+  });
+  try {
+    return await execFileAsync("docker", args, { cwd, timeout, signal, killSignal: "SIGTERM", maxBuffer: 240_000, env: { PATH: process.env.PATH, DOCKER_HOST: process.env.DOCKER_HOST } });
+  } catch (error) {
+    await execFileAsync("docker", ["kill", containerName], { timeout: 5_000, maxBuffer: 10_000 }).catch(() => undefined);
+    await execFileAsync("docker", ["rm", "-f", containerName], { timeout: 5_000, maxBuffer: 10_000 }).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function runWorkspaceCommand(projectId: number, command: string, timeout = 20_000, signal?: AbortSignal) {
   const cwd = await ensureWorkspace(projectId); const started = Date.now();
   try {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("Project commands are disabled in production until an operating-system-isolated execution runtime is configured. No project code was executed.");
-    }
-    const safe = await validateCommand(cwd, command); const result = await execFileAsync(safe.executable, safe.args, { cwd, timeout, signal, killSignal: "SIGTERM", maxBuffer: 240_000, env: { PATH: process.env.PATH, HOME: cwd, XDG_CONFIG_HOME: path.join(cwd, ".config"), npm_config_cache: path.join(cwd, ".npm-cache"), NODE_ENV: "test" } }); return { status: "passed" as const, exitCode: 0, output: `${result.stdout}${result.stderr}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
+    const safe = await validateCommand(cwd, command);
+    const result = process.env.NODE_ENV === "production"
+      ? await runInDockerSandbox(cwd, safe, projectId, timeout, signal)
+      : await execFileAsync(safe.executable, safe.args, { cwd, timeout, signal, killSignal: "SIGTERM", maxBuffer: 240_000, env: { PATH: process.env.PATH, HOME: cwd, XDG_CONFIG_HOME: path.join(cwd, ".config"), npm_config_cache: path.join(cwd, ".npm-cache"), NODE_ENV: "test" } });
+    return { status: "passed" as const, exitCode: 0, output: `${result.stdout}${result.stderr}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
   catch (error) { const failure = error as { code?: number | string; stdout?: string; stderr?: string; message?: string }; return { status: "failed" as const, exitCode: typeof failure.code === "number" ? failure.code : 1, output: `${failure.stdout ?? ""}${failure.stderr ?? ""}${failure.message ?? ""}`.trim().slice(-20_000), durationMs: Date.now() - started }; }
 }
 export async function installWorkspaceDependencies(projectId: number, signal?: AbortSignal) { return runWorkspaceCommand(projectId, "pnpm install --lockfile=false", 120_000, signal); }
