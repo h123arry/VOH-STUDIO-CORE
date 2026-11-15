@@ -105,6 +105,31 @@ describe("mobile starter template", () => {
     }
   });
 
+  it("generates an authenticated SQLite web app with persistent owner-scoped CRUD", async () => {
+    const template = getTemplate("web_app")!;
+    expect(template.name).toContain("SQLite");
+    const files = template.files({ ...project, projectType: "web_app", name: "Task Desk" }, "A private task dashboard");
+    const byPath = new Map(files.map(file => [file.path, file.content]));
+    expect(byPath.get("src/server.mjs")).toContain("HttpOnly");
+    expect(byPath.get("src/server.mjs")).toContain("user_id = ?");
+    expect(byPath.get("src/db.mjs")).toContain("CREATE TABLE IF NOT EXISTS tasks");
+    expect(byPath.get("src/auth.mjs")).toContain("scryptSync");
+    expect(byPath.get(".gitignore")).toContain("data/");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-sqlite-app-"));
+    try {
+      for (const file of files) {
+        const destination = path.join(root, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(destination, file.content, "utf8");
+      }
+      await execFileAsync(process.execPath, ["scripts/test.mjs"], { cwd: root, timeout: 15_000 });
+      await execFileAsync(process.execPath, ["scripts/build.mjs"], { cwd: root, timeout: 10_000 });
+      await expect(fs.access(path.join(root, "dist/index.html"))).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the generated website smoke test and builds its browser assets", async () => {
     const template = getTemplate("website")!;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-website-template-"));

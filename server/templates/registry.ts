@@ -324,6 +324,197 @@ createServer(async (req, res) => {
   ];
 };
 
+const webAppFiles = (project: Project, objective: string): TemplateFile[] => {
+  const name = escapeHtml(project.name);
+  const description = escapeHtml(objective);
+  const packageFile = JSON.stringify({ name: project.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 40), private: true, version: "1.0.0", type: "module", engines: { node: ">=22.13.0" }, scripts: { start: "node src/server.mjs", build: "node scripts/build.mjs", test: "node scripts/test.mjs" } }, null, 2) + "\n";
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="' + description.slice(0, 150) + '"><title>' + name + '</title><link rel="stylesheet" href="/styles.css"></head><body><main class="shell"><header><p class="eyebrow">VOH APPLICATION STARTER</p><h1>' + name + '</h1><p>' + description + '</p></header><section id="auth-view" class="panel"><div class="tabs"><button id="show-login" class="tab active" type="button">Sign in</button><button id="show-register" class="tab" type="button">Create account</button></div><form id="login-form"><label for="login-email">Email</label><input id="login-email" name="email" type="email" autocomplete="email" required><label for="login-password">Password</label><input id="login-password" name="password" type="password" autocomplete="current-password" minlength="12" required><button class="primary" type="submit">Sign in</button></form><form id="register-form" hidden><label for="register-email">Email</label><input id="register-email" name="email" type="email" autocomplete="email" required><label for="register-password">Password (at least 12 characters)</label><input id="register-password" name="password" type="password" autocomplete="new-password" minlength="12" required><button class="primary" type="submit">Create account</button></form><p id="auth-status" role="status"></p></section><section id="app-view" hidden><div class="app-bar"><div><p class="eyebrow">YOUR WORKSPACE</p><h2>My tasks</h2></div><div><span id="user-email"></span><button id="logout" class="quiet" type="button">Sign out</button></div></div><form id="task-form" class="task-form"><label class="sr-only" for="task-title">New task</label><input id="task-title" name="title" maxlength="160" placeholder="Add a task..." required><button class="primary" type="submit">Add task</button></form><p id="task-status" role="status"></p><ul id="task-list" class="task-list"></ul></section></main><script type="module" src="/main.js"></script></body></html>\n';
+  const css = ':root{font-family:Inter,system-ui,sans-serif;color:#f2f2f4;background:#0a0b10}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:28px;display:grid;place-items:center}.shell{width:min(760px,100%)}header{margin-bottom:26px}.eyebrow{font-size:10px;letter-spacing:.18em;font-weight:800;color:#aaa}h1{font-size:clamp(32px,6vw,52px);letter-spacing:-.05em;margin:12px 0}header>p:last-child{color:#a2a3ac;line-height:1.7}.panel{padding:22px;border:1px solid #303139;border-radius:12px;background:#13141b}.tabs{display:flex;gap:8px;margin-bottom:22px}.tab,.quiet{border:1px solid #3a3b44;border-radius:6px;padding:9px 14px;background:transparent;color:#c8c8d0}.tab.active{background:#292633;color:#fff}form{display:grid;gap:10px}label{font-size:12px;color:#c7c7d0;font-weight:700}input{width:100%;padding:13px;border:1px solid #383944;border-radius:7px;background:#0c0d13;color:#fff;font:inherit;margin-bottom:8px}button{font:inherit;cursor:pointer}.primary{border:0;border-radius:7px;padding:12px 16px;background:#eee;color:#111;font-weight:800}.app-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0}.app-bar h2{margin:6px 0;font-size:28px}.app-bar>div:last-child{display:flex;align-items:center;gap:12px;color:#aaa;font-size:12px}.task-form{display:grid;grid-template-columns:1fr auto;gap:10px;padding:18px;border:1px solid #303139;border-radius:10px;background:#13141b}.task-form input{margin:0}.task-list{list-style:none;margin:18px 0;padding:0;display:grid;gap:9px}.task{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid #303139;border-radius:8px;background:#13141b}.task span{flex:1;overflow-wrap:anywhere}.task.done span{text-decoration:line-through;color:#777}.task input{width:18px;height:18px;margin:0}.delete{border:0;background:transparent;color:#d58c91;font-size:12px}#auth-status,#task-status{min-height:22px;color:#b8b8c4;font-size:12px}button:disabled{opacity:.5}@media(max-width:560px){body{padding:16px}.app-bar{align-items:flex-start;flex-direction:column}.task-form{grid-template-columns:1fr}.task-form button{width:100%}}';
+  const js = `const authView=document.querySelector("#auth-view");const appView=document.querySelector("#app-view");const loginForm=document.querySelector("#login-form");const registerForm=document.querySelector("#register-form");const authStatus=document.querySelector("#auth-status");const taskStatus=document.querySelector("#task-status");const taskList=document.querySelector("#task-list");const taskForm=document.querySelector("#task-form");const taskTitle=document.querySelector("#task-title");const userEmail=document.querySelector("#user-email");let tasks=[];async function request(url,options={}){const response=await fetch(url,{...options,headers:{"content-type":"application/json",...(options.headers||{})}});const data=await response.json();if(!response.ok)throw new Error(data.error||"Request failed");return data;}function showAuth(){authView.hidden=false;appView.hidden=true;}function showApp(user){authView.hidden=true;appView.hidden=false;userEmail.textContent=user.email;void loadTasks();}async function loadTasks(){try{tasks=await request("/api/tasks");renderTasks();}catch(error){taskStatus.textContent=error.message;}}function renderTasks(){taskList.replaceChildren();for(const task of tasks){const row=document.createElement("li");row.className="task"+(task.done?" done":"");const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=Boolean(task.done);checkbox.setAttribute("aria-label","Mark task complete");checkbox.addEventListener("change",async()=>{try{await request("/api/tasks/"+task.id,{method:"PATCH",body:JSON.stringify({done:checkbox.checked})});await loadTasks();}catch(error){taskStatus.textContent=error.message;}});const title=document.createElement("span");title.textContent=task.title;const remove=document.createElement("button");remove.className="delete";remove.textContent="Delete";remove.addEventListener("click",async()=>{try{await request("/api/tasks/"+task.id,{method:"DELETE"});await loadTasks();}catch(error){taskStatus.textContent=error.message;}});row.append(checkbox,title,remove);taskList.append(row);}}document.querySelector("#show-login").addEventListener("click",()=>{loginForm.hidden=false;registerForm.hidden=true;authStatus.textContent="";});document.querySelector("#show-register").addEventListener("click",()=>{loginForm.hidden=true;registerForm.hidden=false;authStatus.textContent="";});async function submitAuth(form,route){const values=Object.fromEntries(new FormData(form));try{const result=await request(route,{method:"POST",body:JSON.stringify(values)});form.reset();showApp(result.user);}catch(error){authStatus.textContent=error.message;}}loginForm.addEventListener("submit",event=>{event.preventDefault();void submitAuth(loginForm,"/api/login");});registerForm.addEventListener("submit",event=>{event.preventDefault();void submitAuth(registerForm,"/api/register");});taskForm.addEventListener("submit",async event=>{event.preventDefault();const title=taskTitle.value.trim();if(!title)return;try{await request("/api/tasks",{method:"POST",body:JSON.stringify({title})});taskForm.reset();taskStatus.textContent="Saved to the database.";await loadTasks();}catch(error){taskStatus.textContent=error.message;}});document.querySelector("#logout").addEventListener("click",async()=>{try{await request("/api/logout",{method:"POST",body:"{}"});}finally{showAuth();}});request("/api/me").then(result=>result.user?showApp(result.user):showAuth()).catch(showAuth);`;
+  const db = `import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+export function openDatabase(filename) {
+  if (filename !== ":memory:") mkdirSync(path.dirname(path.resolve(filename)), { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(filename);
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+  db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at); CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 160), done INTEGER NOT NULL DEFAULT 0 CHECK(done IN (0,1)), created_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS tasks_owner_idx ON tasks(user_id, created_at DESC);");
+  return db;
+}
+`;
+  const auth = `import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
+export function normalizeEmail(value) {
+  if (typeof value !== "string") throw new Error("Enter a valid email address.");
+  const email = value.trim().toLowerCase();
+  if (email.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error("Enter a valid email address.");
+  return email;
+}
+export function hashPassword(password) {
+  if (typeof password !== "string" || password.length < 12 || password.length > 128) throw new Error("Password must contain between 12 and 128 characters.");
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, 64);
+  return salt.toString("hex") + ":" + hash.toString("hex");
+}
+export function verifyPassword(password, stored) {
+  if (typeof password !== "string" || typeof stored !== "string") return false;
+  const [saltHex, hashHex] = stored.split(":");
+  if (!/^[a-f0-9]{32}$/.test(saltHex || "") || !/^[a-f0-9]{128}$/.test(hashHex || "")) return false;
+  const expected = Buffer.from(hashHex, "hex");
+  const actual = scryptSync(password, Buffer.from(saltHex, "hex"), expected.length);
+  return timingSafeEqual(actual, expected);
+}
+export const hashToken = token => createHash("sha256").update(token).digest("hex");
+export function parseCookies(header = "") {
+  return Object.fromEntries(header.split(";").map(part => part.trim().split(/=(.*)/s).slice(0, 2)).filter(pair => pair.length === 2));
+}
+`;
+  const server = `import { createServer } from "node:http";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
+import { openDatabase } from "./db.mjs";
+import { hashPassword, verifyPassword, normalizeEmail, hashToken, parseCookies } from "./auth.mjs";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dist = path.join(root, "dist");
+const publicRoot = existsSync(dist) ? dist : path.join(root, "public");
+const db = openDatabase(process.env.VOH_DB_PATH || path.join(root, "data", "voh.sqlite"));
+const limits = new Map();
+const sessionCookie = "voh_session";
+const sessionDays = 7;
+function limited(ip) {
+  const now = Date.now(); const recent = (limits.get(ip) || []).filter(time => now - time < 900_000);
+  if (recent.length >= 10) { limits.set(ip, recent); return true; }
+  recent.push(now); limits.set(ip, recent);
+  if (limits.size > 5000) for (const [key, times] of limits) if (!times.some(time => now - time < 900_000)) limits.delete(key);
+  return false;
+}
+function send(res, status, value) { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }); res.end(JSON.stringify(value)); }
+async function body(req) {
+  let raw = "";
+  for await (const chunk of req) { raw += chunk.toString(); if (raw.length > 16_000) throw new Error("Request body is too large."); }
+  try { return JSON.parse(raw || "{}"); } catch { throw new Error("Invalid JSON request."); }
+}
+function sameOrigin(req) {
+  if (req.headers["sec-fetch-site"] === "cross-site") return false;
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try { return new URL(origin).host === req.headers.host; } catch { return false; }
+}
+function cookieOptions() { return sessionCookie + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" + (process.env.NODE_ENV === "production" ? "; Secure" : ""); }
+function setSessionCookie(res, token) { res.setHeader("Set-Cookie", sessionCookie + "=" + token + "; HttpOnly; SameSite=Strict; Path=/; Max-Age=" + (sessionDays * 86400) + (process.env.NODE_ENV === "production" ? "; Secure" : "")); }
+function currentUser(req) {
+  const token = parseCookies(req.headers.cookie || "")[sessionCookie];
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const now = Date.now();
+  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
+  return db.prepare("SELECT users.id, users.email, sessions.token_hash FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?").get(hashToken(token), now) || null;
+}
+function requireUser(req, res) { const user = currentUser(req); if (!user) { send(res, 401, { error: "Sign in to continue." }); return null; } return user; }
+async function route(req, res) {
+  const url = new URL(req.url || "/", "http://localhost");
+  if (url.pathname.startsWith("/api/") && req.method !== "GET" && !sameOrigin(req)) return send(res, 403, { error: "Cross-origin requests are not allowed." });
+  if (req.method === "GET" && url.pathname === "/api/me") { const user = currentUser(req); return send(res, 200, { user: user ? { id: user.id, email: user.email } : null }); }
+  if (req.method === "POST" && ["/api/login", "/api/register"].includes(url.pathname)) {
+    const ip = req.socket.remoteAddress || "unknown";
+    if (limited(ip)) return send(res, 429, { error: "Too many sign-in attempts. Try again later." });
+    let input; try { input = await body(req); } catch (error) { return send(res, 400, { error: error.message }); }
+    let email; try { email = normalizeEmail(input.email); } catch (error) { return send(res, 400, { error: error.message }); }
+    let user;
+    if (url.pathname === "/api/register") {
+      let passwordHash; try { passwordHash = hashPassword(input.password); } catch (error) { return send(res, 400, { error: error.message }); }
+      try { const inserted = db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES(?,?,?)").run(email,passwordHash,Date.now()); user = { id: Number(inserted.lastInsertRowid), email }; }
+      catch { return send(res, 409, { error: "An account with that email already exists." }); }
+    } else {
+      user = db.prepare("SELECT id,email,password_hash FROM users WHERE email = ?").get(email);
+      if (!user || !verifyPassword(input.password, user.password_hash)) return send(res, 401, { error: "Email or password is incorrect." });
+    }
+    const token = randomBytes(32).toString("hex");
+    db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)").run(hashToken(token),user.id,Date.now()+sessionDays*86400000,Date.now());
+    setSessionCookie(res, token);
+    return send(res, 200, { user: { id: user.id, email: user.email } });
+  }
+  if (req.method === "POST" && url.pathname === "/api/logout") {
+    const user = currentUser(req);
+    if (user) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(user.token_hash);
+    res.setHeader("Set-Cookie", cookieOptions());
+    return send(res, 200, { success: true });
+  }
+  if (url.pathname === "/api/tasks") {
+    const user = requireUser(req,res); if (!user) return;
+    if (req.method === "GET") return send(res, 200, db.prepare("SELECT id,title,done,created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC,id DESC").all(user.id));
+    if (req.method === "POST") {
+      let input; try { input = await body(req); } catch (error) { return send(res, 400, { error: error.message }); }
+      const title = typeof input.title === "string" ? input.title.trim() : "";
+      if (!title || title.length > 160) return send(res, 400, { error: "Task title must contain 1 to 160 characters." });
+      const result = db.prepare("INSERT INTO tasks(user_id,title,created_at) VALUES(?,?,?)").run(user.id,title,Date.now());
+      return send(res, 201, { id: Number(result.lastInsertRowid), title, done: 0 });
+    }
+  }
+  const taskMatch = url.pathname.match(/^\\/api\\/tasks\\/(\\d+)$/);
+  if (taskMatch) {
+    const user = requireUser(req,res); if (!user) return;
+    const id = Number(taskMatch[1]);
+    if (req.method === "PATCH") {
+      let input; try { input = await body(req); } catch (error) { return send(res, 400, { error: error.message }); }
+      if (typeof input.done !== "boolean" && typeof input.title !== "string") return send(res, 400, { error: "Provide a task title or completion state." });
+      if (typeof input.title === "string") { const title = input.title.trim(); if (!title || title.length > 160) return send(res, 400, { error: "Task title must contain 1 to 160 characters." }); db.prepare("UPDATE tasks SET title = ? WHERE id = ? AND user_id = ?").run(title,id,user.id); }
+      if (typeof input.done === "boolean") db.prepare("UPDATE tasks SET done = ? WHERE id = ? AND user_id = ?").run(input.done ? 1 : 0,id,user.id);
+      const updated = db.prepare("SELECT id,title,done,created_at FROM tasks WHERE id = ? AND user_id = ?").get(id,user.id);
+      return updated ? send(res, 200, updated) : send(res, 404, { error: "Task not found." });
+    }
+    if (req.method === "DELETE") { const result = db.prepare("DELETE FROM tasks WHERE id = ? AND user_id = ?").run(id,user.id); return result.changes ? send(res, 200, { success: true }) : send(res, 404, { error: "Task not found." }); }
+  }
+  if (url.pathname.startsWith("/api/")) return send(res, 404, { error: "API route not found." });
+  if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Method not allowed." });
+  let decoded; try { decoded = decodeURIComponent(url.pathname); } catch { res.writeHead(400); return res.end("Invalid path."); }
+  const relative = decoded === "/" ? "index.html" : decoded.replace(/^\\/+/, "");
+  const file = path.resolve(publicRoot, relative);
+  if (file !== publicRoot && !file.startsWith(publicRoot + path.sep)) { res.writeHead(400); return res.end("Invalid path."); }
+  const types = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+  try { if (!statSync(file).isFile()) throw new Error("Not a file"); res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); if (req.method === "HEAD") return res.end(); createReadStream(file).pipe(res); }
+  catch { res.writeHead(404); res.end("Not found."); }
+}
+createServer((req,res)=>{ route(req,res).catch(error=>{ console.error("Request failed:",error.message); if (!res.headersSent) send(res,500,{error:"An unexpected server error occurred."}); else res.destroy(); }); }).listen(Number(process.env.PORT || 4173),"127.0.0.1",()=>console.log("Authenticated web app listening on http://127.0.0.1:"+(process.env.PORT || 4173)));
+`;
+  const testScript = `import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { openDatabase } from "../src/db.mjs";
+import { hashPassword, verifyPassword, normalizeEmail, hashToken, parseCookies } from "../src/auth.mjs";
+const password = "correct horse battery";
+const encoded = hashPassword(password);
+assert.ok(verifyPassword(password, encoded));
+assert.equal(verifyPassword("wrong password", encoded), false);
+assert.throws(() => hashPassword("short"));
+assert.equal(normalizeEmail("  USER@Example.COM "), "user@example.com");
+assert.throws(() => normalizeEmail("not-an-email"));
+assert.equal(parseCookies("a=1; voh_session=abc") .voh_session, "abc");
+const db = openDatabase(":memory:");
+const one = db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES(?,?,?)").run("one@example.com",encoded,Date.now());
+const two = db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES(?,?,?)").run("two@example.com",encoded,Date.now());
+db.prepare("INSERT INTO tasks(user_id,title,created_at) VALUES(?,?,?)").run(Number(one.lastInsertRowid),"Private task",Date.now());
+assert.equal(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE user_id = ?").get(Number(one.lastInsertRowid)).count,1);
+assert.equal(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE user_id = ?").get(Number(two.lastInsertRowid)).count,0);
+assert.equal(hashToken("session").length,64);
+db.close();
+console.log("Authentication, SQLite persistence and per-user data-isolation checks passed.");
+`;
+  return [
+    { path: "package.json", content: packageFile },
+    { path: ".env.example", content: "PORT=4173\nVOH_DB_PATH=./data/voh.sqlite\nNODE_ENV=development\n" },
+    { path: ".gitignore", content: "node_modules/\ndist/\ndata/\n.env\n*.log\n" },
+    { path: "public/index.html", content: html },
+    { path: "public/main.js", content: js },
+    { path: "public/styles.css", content: css },
+    { path: "src/db.mjs", content: db },
+    { path: "src/auth.mjs", content: auth },
+    { path: "src/server.mjs", content: server },
+    { path: "scripts/build.mjs", content: "import fs from 'node:fs';fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});fs.accessSync('src/server.mjs',fs.constants.R_OK);console.log('Web application frontend assets copied to dist/.');\n" },
+    { path: "scripts/test.mjs", content: testScript },
+    { path: "README.md", content: "# " + project.name + "\n\nAuthenticated full-stack web application starter using Node.js and SQLite.\n\nObjective: " + objective + "\n\n## Run\n\nRequires Node.js 22.13 or newer (node:sqlite). Copy .env.example to .env, run pnpm test, pnpm build, then pnpm start. The app creates its SQLite database in data/ and persists users, sessions and tasks across restarts.\n\n## Included\n\n- Email/password registration and login; passwords are scrypt-hashed with per-user salts.\n- HttpOnly, SameSite=Strict session cookies; only token hashes are stored in SQLite.\n- Per-IP sign-in rate limits and same-origin checks for state-changing API requests.\n- User-scoped task CRUD with SQL ownership conditions and persistent SQLite storage.\n\nThis is a single-instance starter, not a production multi-region identity system. Add email verification, password reset, operational backups, stronger edge rate limiting and deployment-specific review before public launch. HTTPS is required in production so Secure cookies are sent.\n" },
+  ];
+};
+
 const apiFiles = (project: Project, objective: string): TemplateFile[] => [
   { path: "package.json", content: packageJson(project.name, { build: "node scripts/check.mjs", test: "node scripts/check.mjs", start: "node src/server.mjs" }) },
   { path: "src/server.mjs", content: `import { createServer } from 'node:http';\nconst service = ${JSON.stringify(project.name)};\nconst objective = ${JSON.stringify(objective)};\ncreateServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ service, objective, status: 'ok' })); }).listen(4173, () => console.log('API listening on 4173'));\n` },
@@ -334,7 +525,7 @@ const apiFiles = (project: Project, objective: string): TemplateFile[] => [
 const templates: ProjectTemplate[] = [
   { kind: "website", name: "Responsive multi-page business website", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: websiteFiles },
   { kind: "ai_app", name: "Server-backed AI chat application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: aiAppFiles },
-  { kind: "web_app", name: "Browser application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
+  { kind: "web_app", name: "Authenticated SQLite web application", runtime: "Node 22.13+", buildCommand: "pnpm build", testCommand: "pnpm test", files: webAppFiles },
   { kind: "mobile", name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser", buildCommand: "pnpm build", testCommand: "pnpm test", files: mobileFiles },
   { kind: "native_mobile", name: "Expo and React Native native app source", runtime: "Expo / React Native", buildCommand: "pnpm build", testCommand: "pnpm test", files: nativeMobileFiles },
   { kind: "game", name: "2D browser game", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: gameFiles },
