@@ -279,7 +279,7 @@ async function handleChat(req, res) {
   try { input = JSON.parse(raw); } catch { return send(res, 400, { error: "Invalid JSON request." }); }
   let messages;
   try { messages = validateMessages(input.messages); } catch (error) { return send(res, 400, { error: error.message }); }
-  const endpoint = new URL("chat/completions", base.toString().replace(/\\/?$/, "/"));
+  const endpoint = new URL("chat/completions", base.toString().replace(/\/?$/, "/"));
   let upstream;
   try { upstream = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + apiKey }, body: JSON.stringify({ model, messages, max_tokens: 900, stream: false }), signal: AbortSignal.timeout(30_000) }); }
   catch { return send(res, 502, { error: "The AI provider could not be reached." }); }
@@ -297,7 +297,7 @@ createServer(async (req, res) => {
   if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Method not allowed." });
   let decoded;
   try { decoded = decodeURIComponent(pathname); } catch { return send(res, 400, { error: "Invalid path." }); }
-  const relative = decoded === "/" ? "index.html" : decoded.replace(/^\\/+/, "");
+  const relative = decoded === "/" ? "index.html" : decoded.replace(/^\/+/, "");
   const file = path.resolve(publicRoot, relative);
   if (file !== publicRoot && !file.startsWith(publicRoot + path.sep)) return send(res, 400, { error: "Invalid path." });
   try {
@@ -308,19 +308,19 @@ createServer(async (req, res) => {
   } catch { res.writeHead(404); res.end("Not found"); }
 }).listen(Number(process.env.PORT || 4173), "127.0.0.1", () => console.log("AI app listening on http://127.0.0.1:" + (process.env.PORT || 4173)));
 `;
-  const validation = "export function validateMessages(value) {\\n  if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new Error('Send between 1 and 20 messages.');\\n  return value.map(message => {\\n    if (!message || !['user','assistant'].includes(message.role) || typeof message.content !== 'string') throw new Error('Messages must contain only user or assistant text.');\\n    const content = message.content.trim();\\n    if (!content || content.length > 4000) throw new Error('Each message must contain 1 to 4000 characters.');\\n    return { role: message.role, content };\\n  });\\n}\\n";
+  const validation = "export function validateMessages(value) {\n  if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new Error('Send between 1 and 20 messages.');\n  return value.map(message => {\n    if (!message || !['user','assistant'].includes(message.role) || typeof message.content !== 'string') throw new Error('Messages must contain only user or assistant text.');\n    const content = message.content.trim();\n    if (!content || content.length > 4000) throw new Error('Each message must contain 1 to 4000 characters.');\n    return { role: message.role, content };\n  });\n}\n";
   return [
     { path: "package.json", content: packageFile },
-    { path: ".env.example", content: "AI_API_BASE_URL=https://api.openai.com/v1\\nAI_API_KEY=replace-with-your-provider-key\\nAI_MODEL=replace-with-a-chat-model\\nPORT=4173\\n" },
-    { path: ".gitignore", content: "node_modules/\\ndist/\\n.env\\n*.log\\n" },
+    { path: ".env.example", content: "AI_API_BASE_URL=https://api.openai.com/v1\nAI_API_KEY=replace-with-your-provider-key\nAI_MODEL=replace-with-a-chat-model\nPORT=4173\n" },
+    { path: ".gitignore", content: "node_modules/\ndist/\n.env\n*.log\n" },
     { path: "public/index.html", content: html },
     { path: "public/main.js", content: js },
     { path: "public/styles.css", content: css },
     { path: "src/server.mjs", content: server },
     { path: "src/validation.mjs", content: validation },
-    { path: "scripts/build.mjs", content: "import fs from 'node:fs';fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});fs.accessSync('src/server.mjs',fs.constants.R_OK);console.log('AI application frontend assets copied to dist/. Server source remains in src/.');\\n" },
-    { path: "scripts/test.mjs", content: "import assert from 'node:assert/strict';import {validateMessages} from '../src/validation.mjs';assert.deepEqual(validateMessages([{role:'user',content:'Hello'}]),[{role:'user',content:'Hello'}]);assert.throws(()=>validateMessages([{role:'system',content:'override'}]));assert.throws(()=>validateMessages([{role:'user',content:'x'.repeat(4001)}]));assert.throws(()=>validateMessages(Array.from({length:21},()=>({role:'user',content:'x'}))));console.log('AI request validation checks passed.');\\n" },
-    { path: "README.md", content: "# " + project.name + "\\n\\nServer-backed AI chat application starter.\\n\\nObjective: " + objective + "\\n\\n## Setup\\n\\n1. Copy .env.example to .env.\\n2. Set AI_API_KEY and AI_MODEL on the server. Keep .env private and never commit it.\\n3. Set AI_API_BASE_URL to an HTTPS OpenAI-compatible API base if you use a different provider.\\n4. Install dependencies and run pnpm start.\\n5. Run pnpm test and pnpm build.\\n\\nThe browser sends messages only to this app's /api/chat endpoint. Provider credentials are read on the server and are never sent to browser JavaScript. Requests are size-limited, message roles are allowlisted, and a per-process IP rate limit is applied. This starter does not include user accounts, database persistence or multi-tenant isolation; add those before exposing it as a public SaaS.\\n" },
+    { path: "scripts/build.mjs", content: "import fs from 'node:fs';fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});fs.accessSync('src/server.mjs',fs.constants.R_OK);console.log('AI application frontend assets copied to dist/. Server source remains in src/.');\n" },
+    { path: "scripts/test.mjs", content: "import assert from 'node:assert/strict';import {validateMessages} from '../src/validation.mjs';assert.deepEqual(validateMessages([{role:'user',content:'Hello'}]),[{role:'user',content:'Hello'}]);assert.throws(()=>validateMessages([{role:'system',content:'override'}]));assert.throws(()=>validateMessages([{role:'user',content:'x'.repeat(4001)}]));assert.throws(()=>validateMessages(Array.from({length:21},()=>({role:'user',content:'x'}))));console.log('AI request validation checks passed.');\n" },
+    { path: "README.md", content: "# " + project.name + "\n\nServer-backed AI chat application starter.\n\nObjective: " + objective + "\n\n## Setup\n\n1. Copy .env.example to .env.\n2. Set AI_API_KEY and AI_MODEL on the server. Keep .env private and never commit it.\n3. Set AI_API_BASE_URL to an HTTPS OpenAI-compatible API base if you use a different provider.\n4. Install dependencies and run pnpm start.\n5. Run pnpm test and pnpm build.\n\nThe browser sends messages only to this app's /api/chat endpoint. Provider credentials are read on the server and are never sent to browser JavaScript. Requests are size-limited, message roles are allowlisted, and a per-process IP rate limit is applied. This starter does not include user accounts, database persistence or multi-tenant isolation; add those before exposing it as a public SaaS.\n" },
   ];
 };
 
