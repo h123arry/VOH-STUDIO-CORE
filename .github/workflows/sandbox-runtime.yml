@@ -1,0 +1,75 @@
+name: Sandbox runtime validation
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile.sandbox"
+      - ".dockerignore"
+      - "server/tools/workspace-tools.ts"
+      - ".github/workflows/sandbox-runtime.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile.sandbox"
+      - ".dockerignore"
+      - "server/tools/workspace-tools.ts"
+      - ".github/workflows/sandbox-runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    name: Build and smoke-test isolated runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build the dedicated sandbox image
+        run: docker build -f Dockerfile.sandbox -t voh-studio-sandbox:ci .
+
+      - name: Run dependency-free project commands with isolation enabled
+        shell: bash
+        run: |
+          workspace="$RUNNER_TEMP/voh-sandbox-smoke"
+          mkdir -p "$workspace/scripts"
+          cat > "$workspace/package.json" <<'JSON'
+          {
+            "name": "sandbox-smoke",
+            "private": true,
+            "scripts": {
+              "build": "node scripts/build.mjs"
+            }
+          }
+          JSON
+          cat > "$workspace/scripts/build.mjs" <<'JS'
+          import fs from "node:fs";
+          fs.mkdirSync("dist", { recursive: true });
+          fs.writeFileSync("dist/build-proof.txt", "isolated build passed");
+          JS
+          docker_args=(
+            run --rm --init
+            --network=none
+            --read-only
+            --cap-drop=ALL
+            --security-opt=no-new-privileges
+            --pids-limit=128
+            --memory=512m
+            --memory-swap=512m
+            --cpus=1
+            --ulimit nofile=1024:1024
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m
+            --volume "$workspace:/workspace:rw"
+            --workdir /workspace
+            --user "$(id -u):$(id -g)"
+            --env HOME=/tmp
+            --env NODE_ENV=test
+            --env COREPACK_ENABLE_NETWORK=0
+            --env PATH=/usr/local/bin:/usr/bin:/bin
+            voh-studio-sandbox:ci
+          )
+          docker "${docker_args[@]}" pnpm install --lockfile=false
+          docker "${docker_args[@]}" pnpm build
+          test -f "$workspace/dist/build-proof.txt"
