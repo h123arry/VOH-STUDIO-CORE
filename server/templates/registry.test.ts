@@ -130,6 +130,28 @@ describe("mobile starter template", () => {
     }
   });
 
+  it("creates an Electron desktop project with a narrow isolated preload bridge", async () => {
+    const template = getTemplate("desktop")!;
+    const files = template.files({ ...project, projectType: "desktop", name: "VOH Notes" }, "A private desktop notes app");
+    const byPath = new Map(files.map(file => [file.path, file.content]));
+    expect(byPath.get("src/main.cjs")).toContain("contextIsolation: true");
+    expect(byPath.get("src/main.cjs")).toContain("sandbox: true");
+    expect(byPath.get("src/main.cjs")).toContain("nodeIntegration: false");
+    expect(byPath.get("src/preload.cjs")).toContain("contextBridge.exposeInMainWorld");
+    expect(byPath.get("src/preload.cjs")).not.toContain("require('fs')");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-desktop-"));
+    try {
+      for (const file of files) {
+        const destination = path.join(root, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(destination, file.content, "utf8");
+      }
+      await execFileAsync(process.execPath, ["scripts/test.cjs"], { cwd: root, timeout: 10_000 });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the generated website smoke test and builds its browser assets", async () => {
     const template = getTemplate("website")!;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-website-template-"));
