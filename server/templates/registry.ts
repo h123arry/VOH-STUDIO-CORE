@@ -1,6 +1,6 @@
 import type { Project } from "../../drizzle/schema";
 
-export type TemplateKind = "website" | "web_app" | "mobile" | "native_mobile" | "game" | "api" | "backend" | "automation" | "dashboard" | "saas";
+export type TemplateKind = "website" | "web_app" | "mobile" | "native_mobile" | "game" | "ai_app" | "api" | "backend" | "automation" | "dashboard" | "saas";
 export type TemplateFile = { path: string; content: string };
 export type ProjectTemplate = { kind: TemplateKind; name: string; runtime: string; buildCommand: string; testCommand: string; files: (project: Project, objective: string) => TemplateFile[] };
 
@@ -238,6 +238,92 @@ const styles = StyleSheet.create({
   ];
 };
 
+const aiAppFiles = (project: Project, objective: string): TemplateFile[] => {
+  const name = escapeHtml(project.name);
+  const description = escapeHtml(objective);
+  const packageFile = JSON.stringify({ name: project.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 40), private: true, version: "1.0.0", type: "module", scripts: { start: "node src/server.mjs", build: "node scripts/build.mjs", test: "node scripts/test.mjs" }, dependencies: { dotenv: "latest" } }, null, 2) + "\n";
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="' + description.slice(0, 150) + '"><title>' + name + '</title><link rel="stylesheet" href="/styles.css"></head><body><main class="app"><header><p class="eyebrow">POWERED BY VOH</p><h1>' + name + '</h1><p>' + description + '</p></header><section class="chat" aria-label="AI conversation"><div id="messages" class="messages" aria-live="polite"><p class="welcome">Your AI workspace is ready. Ask a question to begin.</p></div><form id="chat-form"><label class="sr-only" for="prompt">Your message</label><textarea id="prompt" name="prompt" rows="3" maxlength="4000" placeholder="Ask your AI assistant..." required></textarea><div class="composer-footer"><span id="status" role="status">Your API key stays on the server.</span><button id="send" type="submit">Send message</button></div></form></section></main><script type="module" src="/main.js"></script></body></html>\n';
+  const js = `const form=document.querySelector("#chat-form");const prompt=document.querySelector("#prompt");const messages=document.querySelector("#messages");const status=document.querySelector("#status");const send=document.querySelector("#send");const history=[];function addMessage(role,content){const article=document.createElement("article");article.className="message "+role;const label=document.createElement("strong");label.textContent=role==="user"?"You":"Assistant";const body=document.createElement("p");body.textContent=content;article.append(label,body);messages.append(article);messages.scrollTop=messages.scrollHeight;}form.addEventListener("submit",async event=>{event.preventDefault();const content=prompt.value.trim();if(!content)return;history.push({role:"user",content});addMessage("user",content);prompt.value="";send.disabled=true;status.textContent="Thinking…";try{const response=await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({messages:history})});const result=await response.json();if(!response.ok)throw new Error(result.error||"The AI request failed.");history.push({role:"assistant",content:result.answer});addMessage("assistant",result.answer);status.textContent="Ready";}catch(error){history.pop();status.textContent=error instanceof Error?error.message:"Request failed";}finally{send.disabled=false;prompt.focus();}});`;
+  const css = ':root{font-family:Inter,system-ui,sans-serif;color:#f3f3f5;background:#090a0e}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:28px;display:grid;place-items:center}.app{width:min(820px,100%)}header{margin-bottom:28px}.eyebrow{font-size:10px;letter-spacing:.2em;color:#aaa;font-weight:800}h1{font-size:clamp(32px,6vw,52px);letter-spacing:-.05em;margin:12px 0}.app header>p:last-child{color:#a4a4ae;line-height:1.7}.chat{border:1px solid #303139;border-radius:14px;background:#111218;overflow:hidden}.messages{height:min(55vh,520px);min-height:260px;overflow:auto;padding:20px}.welcome{color:#92939d}.message{max-width:90%;margin:0 0 18px;padding:14px 16px;border-radius:10px;background:#1b1c24}.message.user{margin-left:auto;background:#282433}.message strong{font-size:11px;color:#c9c5d5}.message p{white-space:pre-wrap;line-height:1.6;margin:8px 0 0;color:#e6e6eb}form{border-top:1px solid #303139;padding:16px}textarea{width:100%;resize:vertical;min-height:78px;border:1px solid #383944;border-radius:8px;padding:12px;background:#0b0c11;color:#fff;font:inherit;outline:none}textarea:focus{border-color:#aaa}.composer-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}#status{font-size:11px;color:#a4a4ae}button{border:0;border-radius:7px;padding:11px 18px;background:#eee;color:#111;font-weight:800;cursor:pointer}button:disabled{opacity:.45;cursor:wait}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:560px){body{padding:16px}.messages{height:50vh}.composer-footer{align-items:flex-start;flex-direction:column}button{width:100%}}';
+  const server = `import "dotenv/config";
+import { createServer } from "node:http";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { validateMessages } from "./validation.mjs";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const built = path.join(root, "dist");
+const publicRoot = existsSync(built) ? built : path.join(root, "public");
+const baseValue = process.env.AI_API_BASE_URL || "https://api.openai.com/v1";
+const base = new URL(baseValue);
+if (base.protocol !== "https:" || base.username || base.password) throw new Error("AI_API_BASE_URL must be an HTTPS URL without embedded credentials.");
+const apiKey = process.env.AI_API_KEY || "";
+const model = process.env.AI_MODEL || "";
+const limits = new Map();
+function rateLimited(ip) {
+  const now = Date.now(); const previous = limits.get(ip) || [];
+  const recent = previous.filter(time => now - time < 60_000);
+  if (recent.length >= 20) { limits.set(ip, recent); return true; }
+  recent.push(now); limits.set(ip, recent);
+  if (limits.size > 5000) for (const [key, times] of limits) if (!times.some(time => now - time < 60_000)) limits.delete(key);
+  return false;
+}
+function send(res, status, data) { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }); res.end(JSON.stringify(data)); }
+async function handleChat(req, res) {
+  const ip = req.socket.remoteAddress || "unknown";
+  if (rateLimited(ip)) return send(res, 429, { error: "Too many requests. Try again in a minute." });
+  if (!apiKey || !model) return send(res, 503, { error: "AI_API_KEY and AI_MODEL must be configured on the server." });
+  let raw = "";
+  for await (const chunk of req) { raw += chunk.toString(); if (raw.length > 32_000) return send(res, 413, { error: "Request is too large." }); }
+  let input;
+  try { input = JSON.parse(raw); } catch { return send(res, 400, { error: "Invalid JSON request." }); }
+  let messages;
+  try { messages = validateMessages(input.messages); } catch (error) { return send(res, 400, { error: error.message }); }
+  const endpoint = new URL("chat/completions", base.toString().replace(/\\/?$/, "/"));
+  let upstream;
+  try { upstream = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + apiKey }, body: JSON.stringify({ model, messages, max_tokens: 900, stream: false }), signal: AbortSignal.timeout(30_000) }); }
+  catch { return send(res, 502, { error: "The AI provider could not be reached." }); }
+  if (!upstream.ok) return send(res, 502, { error: "The AI provider rejected the request. Check server configuration and provider account." });
+  let payload;
+  try { payload = await upstream.json(); } catch { return send(res, 502, { error: "The AI provider returned an invalid response." }); }
+  const answer = payload?.choices?.[0]?.message?.content;
+  if (typeof answer !== "string" || !answer.trim()) return send(res, 502, { error: "The AI provider returned no assistant text." });
+  return send(res, 200, { answer: answer.slice(0, 12_000) });
+}
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+createServer(async (req, res) => {
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  if (req.method === "POST" && pathname === "/api/chat") return handleChat(req, res);
+  if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Method not allowed." });
+  let decoded;
+  try { decoded = decodeURIComponent(pathname); } catch { return send(res, 400, { error: "Invalid path." }); }
+  const relative = decoded === "/" ? "index.html" : decoded.replace(/^\\/+/, "");
+  const file = path.resolve(publicRoot, relative);
+  if (file !== publicRoot && !file.startsWith(publicRoot + path.sep)) return send(res, 400, { error: "Invalid path." });
+  try {
+    if (!statSync(file).isFile()) throw new Error("Not a file");
+    res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+    if (req.method === "HEAD") return res.end();
+    createReadStream(file).pipe(res);
+  } catch { res.writeHead(404); res.end("Not found"); }
+}).listen(Number(process.env.PORT || 4173), "127.0.0.1", () => console.log("AI app listening on http://127.0.0.1:" + (process.env.PORT || 4173)));
+`;
+  const validation = "export function validateMessages(value) {\\n  if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new Error('Send between 1 and 20 messages.');\\n  return value.map(message => {\\n    if (!message || !['user','assistant'].includes(message.role) || typeof message.content !== 'string') throw new Error('Messages must contain only user or assistant text.');\\n    const content = message.content.trim();\\n    if (!content || content.length > 4000) throw new Error('Each message must contain 1 to 4000 characters.');\\n    return { role: message.role, content };\\n  });\\n}\\n";
+  return [
+    { path: "package.json", content: packageFile },
+    { path: ".env.example", content: "AI_API_BASE_URL=https://api.openai.com/v1\\nAI_API_KEY=replace-with-your-provider-key\\nAI_MODEL=replace-with-a-chat-model\\nPORT=4173\\n" },
+    { path: ".gitignore", content: "node_modules/\\ndist/\\n.env\\n*.log\\n" },
+    { path: "public/index.html", content: html },
+    { path: "public/main.js", content: js },
+    { path: "public/styles.css", content: css },
+    { path: "src/server.mjs", content: server },
+    { path: "src/validation.mjs", content: validation },
+    { path: "scripts/build.mjs", content: "import fs from 'node:fs';fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});fs.accessSync('src/server.mjs',fs.constants.R_OK);console.log('AI application frontend assets copied to dist/. Server source remains in src/.');\\n" },
+    { path: "scripts/test.mjs", content: "import assert from 'node:assert/strict';import {validateMessages} from '../src/validation.mjs';assert.deepEqual(validateMessages([{role:'user',content:'Hello'}]),[{role:'user',content:'Hello'}]);assert.throws(()=>validateMessages([{role:'system',content:'override'}]));assert.throws(()=>validateMessages([{role:'user',content:'x'.repeat(4001)}]));assert.throws(()=>validateMessages(Array.from({length:21},()=>({role:'user',content:'x'}))));console.log('AI request validation checks passed.');\\n" },
+    { path: "README.md", content: "# " + project.name + "\\n\\nServer-backed AI chat application starter.\\n\\nObjective: " + objective + "\\n\\n## Setup\\n\\n1. Copy .env.example to .env.\\n2. Set AI_API_KEY and AI_MODEL on the server. Keep .env private and never commit it.\\n3. Set AI_API_BASE_URL to an HTTPS OpenAI-compatible API base if you use a different provider.\\n4. Install dependencies and run pnpm start.\\n5. Run pnpm test and pnpm build.\\n\\nThe browser sends messages only to this app's /api/chat endpoint. Provider credentials are read on the server and are never sent to browser JavaScript. Requests are size-limited, message roles are allowlisted, and a per-process IP rate limit is applied. This starter does not include user accounts, database persistence or multi-tenant isolation; add those before exposing it as a public SaaS.\\n" },
+  ];
+};
+
 const apiFiles = (project: Project, objective: string): TemplateFile[] => [
   { path: "package.json", content: packageJson(project.name, { build: "node scripts/check.mjs", test: "node scripts/check.mjs", start: "node src/server.mjs" }) },
   { path: "src/server.mjs", content: `import { createServer } from 'node:http';\nconst service = ${JSON.stringify(project.name)};\nconst objective = ${JSON.stringify(objective)};\ncreateServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ service, objective, status: 'ok' })); }).listen(4173, () => console.log('API listening on 4173'));\n` },
@@ -247,6 +333,7 @@ const apiFiles = (project: Project, objective: string): TemplateFile[] => [
 
 const templates: ProjectTemplate[] = [
   { kind: "website", name: "Responsive multi-page business website", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: websiteFiles },
+  { kind: "ai_app", name: "Server-backed AI chat application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: aiAppFiles },
   { kind: "web_app", name: "Browser application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: browserFiles },
   { kind: "mobile", name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser", buildCommand: "pnpm build", testCommand: "pnpm test", files: mobileFiles },
   { kind: "native_mobile", name: "Expo and React Native native app source", runtime: "Expo / React Native", buildCommand: "pnpm build", testCommand: "pnpm test", files: nativeMobileFiles },
