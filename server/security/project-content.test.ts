@@ -8,6 +8,8 @@ describe("sensitive project content filtering", () => {
     ["config/prod.env", "environment file"],
     [".ssh/id_ed25519", "private SSH key"],
     ["secrets/service-account.json", "service account file"],
+    ["secrets.json", "secret values file"],
+    ["config/credentials.yml", "credential file"],
     ["config/firebase-adminsdk-test.json", "Firebase service account"],
     ["certs/app.p12", "certificate bundle"],
     [".npmrc", "package registry credentials"],
