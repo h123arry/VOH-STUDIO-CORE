@@ -2,15 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { ensureWorkspace, listWorkspaceFiles, normalizeWorkspacePath } from "./workspace-tools";
+import { containsSensitiveValue, isSensitiveProjectPath } from "../security/project-content";
 
 const MAX_ARCHIVE_FILES = 500;
 const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const sensitivePath = /(^|\/)(\.env(?:\.|$)|.*\.(pem|key|p12|pfx)|id_rsa|credentials(?:\.json)?)(\/|$)/i;
-const sensitiveText = /(AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|password\s*[:=]\s*["'][^"']+["'])/i;
 export function isSafeProjectExportFile(filePath: string, content: Buffer) {
-  if (sensitivePath.test(filePath)) return false;
-  return !sensitiveText.test(content.toString("utf8"));
+  return !isSensitiveProjectPath(filePath) && !containsSensitiveValue(content.toString("utf8"));
 }
 
 const crcTable = new Uint32Array(256);
