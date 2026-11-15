@@ -10,6 +10,8 @@ import { createSnapshotDirectory, ensureSnapshotSubdirectory } from "../domain/s
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(process.env.VOH_WORKSPACE_ROOT ?? path.join(process.cwd(), "workspace-data"));
 const MAX_FILE_BYTES = 60_000;
+export const MAX_SNAPSHOT_FILES = 1_000;
+export const MAX_SNAPSHOT_BYTES = 50_000_000;
 const SAFE_SCRIPT = /^(node|pnpm|vite|tsc|echo)\s+[A-Za-z0-9_./:@=-]+(?:\s+[A-Za-z0-9_./:@=-]+)*$/;
 const SAFE_GIT = /^(status|diff|log(?:\s+--oneline)?|rev-parse(?:\s+HEAD)?)$/;
 
@@ -247,23 +249,47 @@ export async function runWorkspaceCommand(projectId: number, command: string, ti
 }
 export async function installWorkspaceDependencies(projectId: number, signal?: AbortSignal) { return runWorkspaceCommand(projectId, "pnpm install --lockfile=false", 120_000, signal); }
 
+export function assertSnapshotInventoryWithinLimits(files: Array<{ kind: "file" | "directory"; size: number }>) {
+  const regularFiles = files.filter(file => file.kind === "file");
+  const totalBytes = regularFiles.reduce((total, file) => total + file.size, 0);
+  if (regularFiles.length > MAX_SNAPSHOT_FILES) {
+    throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_FILES}-file limit`);
+  }
+  if (totalBytes > MAX_SNAPSHOT_BYTES) {
+    throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
+  }
+  return { fileCount: regularFiles.length, totalBytes };
+}
+
 export async function snapshotWorkspace(projectId: number, snapshotId: string) {
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(snapshotId)) throw new Error("Invalid snapshot identifier");
   const workspace = await ensureWorkspace(projectId);
-  const snapshotRoot = await createSnapshotDirectory(ROOT, path.join("snapshots", `project-${projectId}`, snapshotId));
   const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file");
-  for (const file of files) {
-    const source = path.join(workspace, file.path);
-    const sourceStat = await fs.lstat(source);
-    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error("Snapshot source must be a regular file");
-    const realSource = await fs.realpath(source);
-    if (realSource !== workspace && !realSource.startsWith(`${workspace}${path.sep}`)) {
-      throw new Error("Snapshot source resolves outside the project workspace");
+  const inventory = assertSnapshotInventoryWithinLimits(files);
+  const snapshotRoot = await createSnapshotDirectory(ROOT, path.join("snapshots", `project-${projectId}`, snapshotId));
+  let copiedBytes = 0;
+  try {
+    for (const file of files) {
+      const source = path.join(workspace, file.path);
+      const sourceStat = await fs.lstat(source);
+      if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error("Snapshot source must be a regular file");
+      const realSource = await fs.realpath(source);
+      if (realSource !== workspace && !realSource.startsWith(`${workspace}${path.sep}`)) {
+        throw new Error("Snapshot source resolves outside the project workspace");
+      }
+      if (copiedBytes + sourceStat.size > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
+      const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
+      const target = path.join(targetParent, path.basename(file.path));
+      await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
+      const copiedStat = await fs.lstat(target);
+      if (copiedStat.isSymbolicLink() || !copiedStat.isFile()) throw new Error("Snapshot destination must be a regular file");
+      copiedBytes += copiedStat.size;
+      if (copiedBytes > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
     }
-    const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
-    const target = path.join(targetParent, path.basename(file.path));
-    await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    await fs.rm(snapshotRoot, { recursive: true, force: true });
+    throw error;
   }
   const storageRoot = await fs.realpath(ROOT);
-  return { snapshotPath: path.relative(storageRoot, snapshotRoot), fileCount: files.length };
+  return { snapshotPath: path.relative(storageRoot, snapshotRoot), fileCount: inventory.fileCount };
 }

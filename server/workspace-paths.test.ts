@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -225,5 +225,25 @@ describe("project workspace root validation", () => {
     await expect(ensureWorkspace(0)).rejects.toThrow("Invalid project workspace identifier");
     await expect(ensureWorkspace(-1)).rejects.toThrow("Invalid project workspace identifier");
     await expect(ensureWorkspace(Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow("Invalid project workspace identifier");
+  });
+});
+
+
+describe("snapshot storage limits", () => {
+  it("rejects snapshots containing too many files", () => {
+    const files = Array.from({ length: MAX_SNAPSHOT_FILES + 1 }, () => ({ kind: "file" as const, size: 1 }));
+    expect(() => assertSnapshotInventoryWithinLimits(files)).toThrow("file limit");
+  });
+
+  it("rejects snapshots that exceed the total byte budget", () => {
+    expect(() => assertSnapshotInventoryWithinLimits([{ kind: "file", size: MAX_SNAPSHOT_BYTES + 1 }])).toThrow("storage limit");
+  });
+
+  it("counts only regular files and accepts inventories within the budget", () => {
+    expect(assertSnapshotInventoryWithinLimits([
+      { kind: "directory", size: 0 },
+      { kind: "file", size: 120 },
+      { kind: "file", size: 80 },
+    ])).toEqual({ fileCount: 2, totalBytes: 200 });
   });
 });
