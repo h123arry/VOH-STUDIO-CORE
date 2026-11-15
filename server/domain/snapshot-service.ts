@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { projectFiles, projectSnapshots } from "../../drizzle/schema";
 import { clearProjectContext } from "../context/context-engine";
 import { getDb } from "../db";
-import { ensureWorkspace, snapshotWorkspace } from "../tools/workspace-tools";
+import { ensureWorkspace, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, snapshotWorkspace } from "../tools/workspace-tools";
+import { compareSnapshotFileHashes } from "./snapshot-diff";
 import { assertSnapshotTreeHasNoSymlinks, resolveSnapshotDirectory } from "./snapshot-paths";
 
 const ROOT = path.resolve(
@@ -128,16 +130,36 @@ export async function compareProjectSnapshot(
   if (!row) throw new Error("Snapshot not found");
   const source = await resolveSnapshotDirectory(ROOT, row.snapshotPath);
   await assertSnapshotTreeHasNoSymlinks(source);
-  const snapshotFiles = await listRelativeFiles(source);
   const workspace = await ensureWorkspace(projectId);
-  const currentFiles = await listRelativeFiles(workspace);
-  return {
-    snapshotId: row.id,
-    added: currentFiles.filter(file => !snapshotFiles.includes(file)),
-    removed: snapshotFiles.filter(file => !currentFiles.includes(file)),
-    unchangedCount: currentFiles.filter(file => snapshotFiles.includes(file))
-      .length,
-  };
+  const [snapshotHashes, currentHashes] = await Promise.all([
+    hashWorkspaceFiles(source),
+    hashWorkspaceFiles(workspace),
+  ]);
+  return { snapshotId: row.id, ...compareSnapshotFileHashes(snapshotHashes, currentHashes) };
+}
+
+
+async function hashWorkspaceFiles(root: string) {
+  const relativePaths = await listRelativeFiles(root);
+  if (relativePaths.length > MAX_SNAPSHOT_FILES) throw new Error("Snapshot comparison exceeds the file-count limit");
+  const hashes = new Map<string, string>();
+  let totalBytes = 0;
+  for (const relativePath of relativePaths) {
+    const absolutePath = path.join(root, relativePath);
+    const stat = await fs.lstat(absolutePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) continue;
+    totalBytes += stat.size;
+    if (totalBytes > MAX_SNAPSHOT_BYTES) throw new Error("Snapshot comparison exceeds the storage limit");
+    const hash = crypto.createHash("sha256");
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(absolutePath);
+      stream.on("data", chunk => hash.update(chunk));
+      stream.on("error", reject);
+      stream.on("end", resolve);
+    });
+    hashes.set(relativePath, hash.digest("hex"));
+  }
+  return hashes;
 }
 
 async function listRelativeFiles(root: string) {
@@ -147,7 +169,7 @@ async function listRelativeFiles(root: string) {
       if (entry.isSymbolicLink() || entry.name === "node_modules") continue;
       const absolute = path.join(current, entry.name);
       if (entry.isDirectory()) await walk(absolute);
-      else output.push(path.relative(root, absolute));
+      else if (entry.isFile()) output.push(path.relative(root, absolute));
     }
   };
   await walk(root);
