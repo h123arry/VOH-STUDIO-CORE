@@ -39,6 +39,35 @@ export function normalizeWorkspacePath(relativePath: string) {
 const safePath = normalizeWorkspacePath;
 const assertAbsoluteInside = (workspace: string, absolute: string) => { if (absolute !== workspace && !absolute.startsWith(`${workspace}${path.sep}`)) throw new Error("Path is outside the project workspace"); };
 const assertRealInside = async (workspace: string, absolute: string) => { const real = await fs.realpath(absolute); if (real !== workspace && !real.startsWith(`${workspace}${path.sep}`)) throw new Error("Resolved path is outside the project workspace"); return real; };
+async function readRegularWorkspaceFile(workspace: string, relativePath: string, maxBytes: number) {
+  const safe = safePath(relativePath);
+  const absolute = path.join(workspace, safe);
+  assertAbsoluteInside(workspace, absolute);
+  const segments = safe.split(path.sep);
+  let current = workspace;
+  for (let index = 0; index < segments.length; index++) {
+    current = path.join(current, segments[index]);
+    const entry = await fs.lstat(current);
+    if (entry.isSymbolicLink()) throw new Error("Symbolic links are not readable in the workspace");
+    if (index < segments.length - 1 && !entry.isDirectory()) {
+      throw new Error("Workspace parent path is not a directory");
+    }
+    if (index === segments.length - 1 && !entry.isFile()) {
+      throw new Error("Only regular workspace files can be read");
+    }
+  }
+
+  const handle = await fs.open(absolute, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error("Only regular workspace files can be read");
+    if (opened.size > maxBytes) throw new Error("Workspace file exceeds the read size limit");
+    return { content: await handle.readFile(), size: opened.size };
+  } finally {
+    await handle.close();
+  }
+}
+
 
 export const projectWorkspace = (projectId: number) => path.join(ROOT, `project-${projectId}`);
 export async function ensureWorkspace(projectId: number) {
@@ -62,8 +91,8 @@ export async function listWorkspaceFiles(projectId: number) {
   await walk(workspace); return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function readWorkspaceFile(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); const link = await fs.lstat(absolute); if (link.isSymbolicLink()) throw new Error("Symbolic links are not readable in the workspace"); await assertRealInside(workspace, absolute); if (link.size > MAX_FILE_BYTES) throw new Error("File is too large to open in the studio"); return fs.readFile(absolute, "utf8"); }
-export async function readWorkspaceAsset(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const absolute = path.join(workspace, safe); assertAbsoluteInside(workspace, absolute); const link = await fs.lstat(absolute); if (link.isSymbolicLink()) throw new Error("Symbolic links are not served in preview"); await assertRealInside(workspace, absolute); if (link.size > 2_000_000) throw new Error("Preview asset exceeds the size limit"); return { path: safe, content: await fs.readFile(absolute), size: link.size }; }
+export async function readWorkspaceFile(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const result = await readRegularWorkspaceFile(workspace, relativePath, MAX_FILE_BYTES); return result.content.toString("utf8"); }
+export async function readWorkspaceAsset(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const result = await readRegularWorkspaceFile(workspace, safe, 2_000_000); return { path: safe, content: result.content, size: result.size }; }
 
 export async function writeWorkspaceFile(projectId: number, relativePath: string, content: string, lastOperation = "write", createOnly = false) {
   const size = Buffer.byteLength(content, "utf8");
