@@ -299,7 +299,7 @@ export function buildDockerSandboxArgs(input: {
 }
 
 async function runInDockerSandbox(cwd: string, safe: { executable: string; args: string[] }, projectId: number, timeout: number, signal?: AbortSignal) {
-  if (process.env.VOH_DOCKER_EXECUTOR_ENABLED !== "true") throw new Error("Production project execution is disabled. Configure the Docker sandbox and set VOH_DOCKER_EXECUTOR_ENABLED=true.");
+  if (process.env.VOH_DOCKER_EXECUTOR_ENABLED !== "true") throw new Error("Project commands are disabled in production until the Docker sandbox is configured. No project code was executed. Set VOH_DOCKER_EXECUTOR_ENABLED=true after building the sandbox image.");
   const containerName = "voh-" + projectId + "-" + crypto.randomUUID();
   const args = buildDockerSandboxArgs({
     workspace: cwd,
