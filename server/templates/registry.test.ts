@@ -74,6 +74,31 @@ describe("mobile starter template", () => {
     }
   });
 
+  it("builds a complete responsive multi-page business website", async () => {
+    const template = getTemplate("website")!;
+    const files = template.files({ ...project, projectType: "website", name: "Atlas & Co" }, "A thoughtful business website");
+    const paths = files.map(file => file.path);
+    expect(paths).toEqual(expect.arrayContaining(["index.html", "about.html", "services.html", "contact.html", "src/main.js", "src/styles.css"]));
+    expect(files.find(file => file.path === "index.html")?.content).toContain('aria-label="Main navigation"');
+    expect(files.find(file => file.path === "contact.html")?.content).toContain('type="email"');
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-multipage-website-"));
+    try {
+      for (const file of files) {
+        const destination = path.join(root, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(destination, file.content, "utf8");
+      }
+      await execFileAsync(process.execPath, ["scripts/test.mjs"], { cwd: root, timeout: 10_000 });
+      await execFileAsync(process.execPath, ["scripts/build.mjs"], { cwd: root, timeout: 10_000 });
+      for (const page of ["index.html", "about.html", "services.html", "contact.html"]) {
+        await expect(fs.access(path.join(root, "dist", page))).resolves.toBeUndefined();
+      }
+      await expect(fs.access(path.join(root, "dist/src/main.js"))).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the generated game logic tests and builds the browser game", async () => {
     const template = getTemplate("game")!;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voh-game-template-"));
