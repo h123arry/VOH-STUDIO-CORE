@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
@@ -7,6 +8,38 @@ import { containsSensitiveValue, isSensitiveProjectPath } from "../security/proj
 const MAX_ARCHIVE_FILES = 500;
 const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export async function readRegularWorkspaceFile(root: string, relativePath: string): Promise<Buffer | null> {
+  const safe = normalizeWorkspacePath(relativePath);
+  const absolute = path.resolve(root, safe);
+  if (absolute !== root && !absolute.startsWith(root + path.sep)) {
+    throw new Error("Project export path escaped its workspace");
+  }
+
+  const segments = safe.split(path.sep);
+  let current = root;
+  for (let index = 0; index < segments.length; index++) {
+    current = path.join(current, segments[index]);
+    const entry = await fs.lstat(current);
+    if (entry.isSymbolicLink()) throw new Error("Symbolic links are not included in project exports");
+    if (index < segments.length - 1 && !entry.isDirectory()) {
+      throw new Error("Project export parent path is not a directory");
+    }
+    if (index === segments.length - 1 && !entry.isFile()) {
+      throw new Error("Only regular files can be included in project exports");
+    }
+  }
+
+  const handle = await fs.open(absolute, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error("Only regular files can be included in project exports");
+    if (opened.size > MAX_FILE_BYTES) return null;
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
 export function isSafeProjectExportFile(filePath: string, content: Buffer) {
   return !isSensitiveProjectPath(filePath) && !containsSensitiveValue(content.toString("utf8"));
 }
@@ -98,16 +131,21 @@ export async function createWorkspaceZip(projectId: number) {
 
   for (const file of diskFiles) {
     const safe = normalizeWorkspacePath(file.path);
-    const absolute = path.resolve(root, safe);
-    if (absolute !== root && !absolute.startsWith(root + path.sep)) throw new Error("Project export path escaped its workspace");
-    const stat = await fs.lstat(absolute);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) {
-      skippedFiles++;
-      continue;
+    let content: Buffer;
+    try {
+      const read = await readRegularWorkspaceFile(root, safe);
+      if (!read) {
+        skippedFiles++;
+        continue;
+      }
+      content = read;
+    } catch (error) {
+      if (error instanceof Error && /Symbolic links|regular files|parent path/.test(error.message)) {
+        skippedFiles++;
+        continue;
+      }
+      throw error;
     }
-    const real = await fs.realpath(absolute);
-    if (real !== root && !real.startsWith(root + path.sep)) throw new Error("Project export resolved outside its workspace");
-    const content = await fs.readFile(real);
     const portablePath = safe.split(path.sep).join("/");
     if (!isSafeProjectExportFile(portablePath, content)) {
       skippedFiles++;
