@@ -293,7 +293,7 @@ export function assertSnapshotInventoryWithinLimits(files: Array<{ kind: "file" 
 
 export async function snapshotWorkspace(projectId: number, snapshotId: string) {
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(snapshotId)) throw new Error("Invalid snapshot identifier");
-  const workspace = await ensureWorkspace(projectId);
+  await ensureWorkspace(projectId);
   const files = (await listWorkspaceFiles(projectId)).filter(file => file.kind === "file");
   const inventory = assertSnapshotInventoryWithinLimits(files);
   const snapshotRoot = await createSnapshotDirectory(ROOT, path.join("snapshots", `project-${projectId}`, snapshotId));
