@@ -46,6 +46,15 @@ describe("project export secret filtering", () => {
     expect(isSafeProjectExportFile("src/config.ts", Buffer.from("-----BEGIN PRIVATE KEY-----"))).toBe(false);
   });
 
+  it("excludes cloud credentials and sensitive config paths", () => {
+    expect(isSafeProjectExportFile(".npmrc", Buffer.from("registry=https://registry.example"))).toBe(false);
+    expect(isSafeProjectExportFile("config/credentials.yml", Buffer.from("placeholder"))).toBe(false);
+    const serviceRoleKey = "const SUPABASE_SERVICE_ROLE_KEY = \"" + "x".repeat(32) + "\";";
+    const databaseUrl = "const DATABASE_URL = \"postgres://user:" + "p".repeat(24) + "@localhost/db\";";
+    expect(isSafeProjectExportFile("src/config.ts", Buffer.from(serviceRoleKey))).toBe(false);
+    expect(isSafeProjectExportFile("src/config.ts", Buffer.from(databaseUrl))).toBe(false);
+  });
+
   it("allows ordinary project source", () => {
     expect(isSafeProjectExportFile("src/main.js", Buffer.from("export const ready = true;"))).toBe(true);
   });
