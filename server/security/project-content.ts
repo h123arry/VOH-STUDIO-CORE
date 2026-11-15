@@ -1,5 +1,5 @@
 const sensitivePathPatterns = [
-  /(^|\/)\.env(?:\.[^/]*)?$/i,
+  /(^|\/)\.(?:env(?:\.[^/]*)?|envrc)$/i,
   /(^|\/)[^/]+\.env$/i,
   /(^|\/)\.(?:npmrc|pypirc|netrc)$/i,
   /(^|\/)(?:credentials?(?:\.json)?|service[-_]?account(?:[-_][^/]*)?\.json|firebase-adminsdk[^/]*\.json)(\/|$)/i,
@@ -7,6 +7,11 @@ const sensitivePathPatterns = [
   /(^|\/)(?:secrets?|credentials?)(?:\.[^/]*)?$/i,
   /(^|\/)(?:id_rsa|id_ed25519|id_ecdsa)(?:\.pub)?$/i,
   /\.(?:pem|key|p12|pfx|jks|keystore)$/i,
+  /(^|\/)(?:\.docker|\.kube|\.terraform|\.vault|\.gnupg|\.config\/gh|gcloud)(\/|$)/i,
+  /(^|\/)(?:kubeconfig|\.git-credentials|\.vault-token)$/i,
+  /\.(?:tfstate(?:\.backup)?|secret)$/i,
+  /\b(?:https?|postgres(?:ql)?|mysql|redis):\/\/[^/\s:@]+:[^@\s/]+@/i,
+  /\b(?:authorization\s*[:=]\s*)?basic\s+[A-Za-z0-9+/=]{12,}/i,
 ];
 
 const sensitiveValuePatterns = [
