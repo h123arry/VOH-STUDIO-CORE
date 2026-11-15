@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { projectFiles, projectSnapshots } from "../../drizzle/schema";
@@ -148,16 +148,23 @@ async function hashWorkspaceFiles(root: string) {
     const absolutePath = path.join(root, relativePath);
     const stat = await fs.lstat(absolutePath);
     if (stat.isSymbolicLink() || !stat.isFile()) continue;
-    totalBytes += stat.size;
-    if (totalBytes > MAX_SNAPSHOT_BYTES) throw new Error("Snapshot comparison exceeds the storage limit");
-    const hash = crypto.createHash("sha256");
-    await new Promise<void>((resolve, reject) => {
-      const stream = createReadStream(absolutePath);
-      stream.on("data", chunk => hash.update(chunk));
-      stream.on("error", reject);
-      stream.on("end", resolve);
-    });
-    hashes.set(relativePath, hash.digest("hex"));
+    const handle = await fs.open(absolutePath, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    try {
+      const openedStat = await handle.stat();
+      if (!openedStat.isFile()) continue;
+      totalBytes += openedStat.size;
+      if (totalBytes > MAX_SNAPSHOT_BYTES) throw new Error("Snapshot comparison exceeds the storage limit");
+      const hash = crypto.createHash("sha256");
+      await new Promise<void>((resolve, reject) => {
+        const stream = handle.createReadStream({ autoClose: false });
+        stream.on("data", chunk => hash.update(chunk));
+        stream.on("error", reject);
+        stream.on("end", resolve);
+      });
+      hashes.set(relativePath, hash.digest("hex"));
+    } finally {
+      await handle.close();
+    }
   }
   return hashes;
 }
