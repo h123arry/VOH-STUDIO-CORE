@@ -73,7 +73,7 @@ export default function WorkspaceRecoveryPanel({
           </select>
           {comparison.isLoading ? (
             <p className="workspace-recovery-muted" role="status">
-              Comparing workspace file lists…
+              Comparing workspace file contents…
             </p>
           ) : comparison.isError ? (
             <p className="workspace-recovery-error" role="alert">
@@ -84,7 +84,8 @@ export default function WorkspaceRecoveryPanel({
               <div>
                 {comparison.data.added.length} added ·{" "}
                 {comparison.data.removed.length} missing now ·{" "}
-                {comparison.data.unchangedCount} paths still present
+                {comparison.data.changed.length} modified ·{" "}
+                {comparison.data.unchangedCount} unchanged
               </div>
               {comparison.data.added.length > 0 && (
                 <p>
@@ -98,8 +99,14 @@ export default function WorkspaceRecoveryPanel({
                   {comparison.data.removed.slice(0, 8).join(", ")}
                 </p>
               )}
+              {comparison.data.changed.length > 0 && (
+                <p>
+                  Modified since snapshot:{" "}
+                  {comparison.data.changed.slice(0, 8).join(", ")}
+                </p>
+              )}
               <p className="workspace-recovery-muted">
-                This compares file paths, not line-by-line contents. Restore is
+                This compares file paths and content hashes, not line-by-line diffs. Restore is
                 explicit and replaces the whole workspace.
               </p>
             </div>
