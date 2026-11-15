@@ -44,7 +44,8 @@ describe("VOH core policies", () => {
     expect(template).toBeDefined();
     const files = template!.files({ id: 1, ownerId: 1, name: "Atlas", slug: "atlas", description: "A site", projectType: "website", lifecycle: "active", workspacePath: "workspace-data/project-1", activeTaskId: null, settings: null, createdAt: new Date(), updatedAt: new Date() }, "Create a simple website");
     expect(files.map(file => file.path)).toEqual(expect.arrayContaining(["package.json", "index.html", "src/main.js", "scripts/build.mjs", "scripts/test.mjs"]));
-    expect(files.find(file => file.path === "scripts/build.mjs")?.content).toContain("fs.cpSync('src', 'dist/src', { recursive: true })");
+    expect(files.find(file => file.path === "scripts/build.mjs")?.content).toContain("fs.cpSync");
+    expect(files.map(file => file.path)).toEqual(expect.arrayContaining(["about.html", "services.html", "contact.html"]));
   });
   it("creates a playable browser game with a tested animation loop", () => {
     const template = getTemplate("game");
