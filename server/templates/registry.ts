@@ -58,8 +58,9 @@ const gameFiles = (project: Project, objective: string): TemplateFile[] => {
   const markdownObjective = escapeMarkdown(objective);
   return [
     { path: "package.json", content: packageJson(project.name, { build: "node scripts/build.mjs", test: "node scripts/test.mjs", start: "node scripts/serve.mjs" }, "module") },
-    { path: "index.html", content: `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101820"><title>${name}</title><link rel="stylesheet" href="src/styles.css"></head><body><main class="game-shell"><header><div><p class="eyebrow">ARCADE / 01</p><h1>${name}</h1></div><p class="score" aria-live="polite">Sparks <span id="score">0</span> / 6</p></header><canvas id="game" width="800" height="450" aria-label="Collect all six sparks. Move with arrow keys or WASD."></canvas><footer><p id="message" aria-live="polite">Collect all six sparks. Move with arrow keys or WASD.</p><button id="restart" type="button">Restart</button></footer></main><script type="module" src="src/main.js"></script></body></html>\n` },
+    { path: "index.html", content: `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101820"><title>${name}</title><link rel="stylesheet" href="src/styles.css"></head><body><main class="game-shell"><header><div><p class="eyebrow">ARCADE / 01</p><h1>${name}</h1></div><p class="score" aria-live="polite">Sparks <span id="score">0</span> / 6 <small>Best <span id="best">0</span></small></p></header><canvas id="game" width="800" height="450" aria-label="Collect all six sparks. Move with arrow keys, WASD or touch controls."></canvas><footer><p id="message" aria-live="polite">Collect all six sparks. Move with arrows, WASD or touch controls.</p><div class="game-actions"><button id="pause" type="button">Pause</button><button id="restart" type="button">Restart</button></div></footer><div class="touch-controls" aria-label="Touch movement controls"><button type="button" data-key="ArrowUp" aria-label="Move up">↑</button><div><button type="button" data-key="ArrowLeft" aria-label="Move left">←</button><button type="button" data-key="ArrowDown" aria-label="Move down">↓</button><button type="button" data-key="ArrowRight" aria-label="Move right">→</button></div></div></main><script type="module" src="src/main.js"></script></body></html>\n` },
     { path: "src/game.js", content: `export const createGame = () => ({ player: { x: 400, y: 225 }, sparks: [{ x: 110, y: 90 }, { x: 690, y: 100 }, { x: 160, y: 350 }, { x: 650, y: 345 }, { x: 400, y: 70 }, { x: 400, y: 380 }], score: 0, status: 'playing' });
+export const togglePause = game => game.status === 'playing' ? { ...game, status: 'paused' } : game.status === 'paused' ? { ...game, status: 'playing' } : game;
 export function stepGame(game, input, delta) {
   if (game.status !== 'playing') return game;
   const magnitude = Math.hypot(input.x, input.y) || 1;
@@ -70,21 +71,33 @@ export function stepGame(game, input, delta) {
   return { player, sparks, score, status: score === 6 ? 'won' : 'playing' };
 }
 ` },
-    { path: "src/main.js", content: `import { createGame, stepGame } from './game.js';
+    { path: "src/main.js", content: `import { createGame, stepGame, togglePause } from './game.js';
 const canvas = document.querySelector('#game');
 const context = canvas.getContext('2d');
 const scoreLabel = document.querySelector('#score');
+const bestLabel = document.querySelector('#best');
 const message = document.querySelector('#message');
+const pauseButton = document.querySelector('#pause');
 const keys = new Set();
 let game = createGame();
 let previous = 0;
+let best = Number(localStorage.getItem('voh-game-best') || 0);
+bestLabel.textContent = String(best);
 const resize = () => { const ratio = window.devicePixelRatio || 1; const bounds = canvas.getBoundingClientRect(); canvas.width = Math.round(bounds.width * ratio); canvas.height = Math.round(bounds.height * ratio); context.setTransform(canvas.width / 800, 0, 0, canvas.height / 450, 0, 0); };
 const input = () => ({ x: Number(keys.has('ArrowRight') || keys.has('d')) - Number(keys.has('ArrowLeft') || keys.has('a')), y: Number(keys.has('ArrowDown') || keys.has('s')) - Number(keys.has('ArrowUp') || keys.has('w')) });
-window.addEventListener('keydown', event => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) event.preventDefault(); keys.add(event.key); });
+const pause = () => { game = togglePause(game); keys.clear(); pauseButton.textContent = game.status === 'paused' ? 'Resume' : 'Pause'; message.textContent = game.status === 'paused' ? 'Paused. Take a breath.' : 'Back in the game. Collect all six sparks.'; };
+window.addEventListener('keydown', event => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) event.preventDefault(); if (event.key.toLowerCase() === 'p' && !event.repeat) { pause(); return; } keys.add(event.key); });
 window.addEventListener('keyup', event => keys.delete(event.key));
 window.addEventListener('blur', () => keys.clear());
 window.addEventListener('resize', resize);
-document.querySelector('#restart').addEventListener('click', () => { game = createGame(); message.textContent = 'Collect all six sparks. Move with arrow keys or WASD.'; });
+document.querySelector('#pause').addEventListener('click', pause);
+document.querySelector('#restart').addEventListener('click', () => { game = createGame(); keys.clear(); previous = 0; pauseButton.textContent = 'Pause'; message.textContent = 'Collect all six sparks. Move with arrows, WASD or touch controls.'; });
+for (const control of document.querySelectorAll('[data-key]')) {
+  const key = control.dataset.key;
+  control.addEventListener('pointerdown', event => { event.preventDefault(); control.setPointerCapture(event.pointerId); keys.add(key); });
+  const release = () => keys.delete(key);
+  control.addEventListener('pointerup', release); control.addEventListener('pointercancel', release); control.addEventListener('lostpointercapture', release);
+}
 function frame(time) {
   game = stepGame(game, input(), previous ? (time - previous) / 1000 : 0);
   previous = time;
@@ -98,7 +111,9 @@ function frame(time) {
   context.shadowBlur = 0;
   context.beginPath(); context.arc(game.player.x, game.player.y, 15, 0, Math.PI * 2); context.fillStyle = '#e5684f'; context.fill();
   scoreLabel.textContent = String(game.score);
+  if (game.score > best) { best = game.score; bestLabel.textContent = String(best); localStorage.setItem('voh-game-best', String(best)); }
   if (game.status === 'won') message.textContent = 'All sparks collected. Nice run.';
+  if (game.status === 'paused') { context.fillStyle = 'rgba(8, 12, 18, .68)'; context.fillRect(0, 0, 800, 450); context.fillStyle = '#f2eee5'; context.font = 'bold 34px system-ui'; context.textAlign = 'center'; context.fillText('PAUSED', 400, 230); }
   requestAnimationFrame(frame);
 }
 resize(); requestAnimationFrame(frame);
@@ -113,8 +128,14 @@ h1 { margin: 0 0 18px; font-size: clamp(20px, 4vw, 32px); }
 .score { color: #f4bd50; white-space: nowrap; }
 canvas { display: block; width: 100%; aspect-ratio: 16 / 9; border: 1px solid #42545a; background: #101820; }
 footer { min-height: 60px; color: #c7d0cc; }
+.game-actions { display: flex; gap: 8px; }
 button { border: 1px solid #8db0b3; border-radius: 4px; padding: 9px 13px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 button:hover { background: #26383d; }
+.score small { display: block; margin-top: 6px; color: #8db0b3; font-size: 10px; }
+.touch-controls { display: none; justify-content: center; gap: 8px; margin-top: 12px; }
+.touch-controls>div { display: flex; gap: 8px; }
+.touch-controls button { width: 48px; height: 44px; font-size: 20px; touch-action: none; user-select: none; }
+@media (max-width: 700px), (pointer: coarse) { .touch-controls { display: flex; } }
 @media (max-width: 520px) { body { padding: 16px; } header { align-items: flex-start; } footer { align-items: flex-start; flex-direction: column; padding-top: 8px; } }
 ` },
     { path: "scripts/build.mjs", content: `import fs from 'node:fs';
@@ -124,10 +145,14 @@ for (const file of ['index.html', 'src/main.js', 'src/game.js', 'src/styles.css'
 console.log('Browser game built to dist/.');
 ` },
     { path: "scripts/test.mjs", content: `import assert from 'node:assert/strict';
-import { createGame, stepGame } from '../src/game.js';
+import { createGame, stepGame, togglePause } from '../src/game.js';
 const initial = createGame();
 assert.equal(initial.status, 'playing');
 assert.equal(initial.sparks.length, 6);
+const paused = togglePause(initial);
+assert.equal(paused.status, 'paused');
+assert.deepEqual(stepGame(paused, { x: 1, y: 0 }, 0.04), paused);
+assert.equal(togglePause(paused).status, 'playing');
 const moved = stepGame(initial, { x: 1, y: 0 }, 0.04);
 assert.ok(moved.player.x > initial.player.x);
 const collected = stepGame({ ...initial, player: { x: 110, y: 90 } }, { x: 0, y: 0 }, 0);

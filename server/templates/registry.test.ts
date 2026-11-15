@@ -74,6 +74,19 @@ describe("mobile starter template", () => {
     }
   });
 
+  it("includes touch controls, pause and persistent best score in the game template", () => {
+    const files = getTemplate("game")!.files({ ...project, projectType: "game", name: "Orbit" }, "Collect sparks");
+    const html = files.find(file => file.path === "index.html")!.content;
+    const main = files.find(file => file.path === "src/main.js")!.content;
+    const logic = files.find(file => file.path === "src/game.js")!.content;
+    expect(html).toContain('data-key="ArrowUp"');
+    expect(html).toContain('id="pause"');
+    expect(main).toContain("localStorage.setItem('voh-game-best'");
+    expect(main).toContain("pointerdown");
+    expect(logic).toContain("togglePause");
+    expect(files.find(file => file.path === "scripts/test.mjs")!.content).toContain("paused.status");
+  });
+
   it("builds a complete responsive multi-page business website", async () => {
     const template = getTemplate("website")!;
     const files = template.files({ ...project, projectType: "website", name: "Atlas & Co" }, "A thoughtful business website");
