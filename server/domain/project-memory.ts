@@ -6,12 +6,6 @@ import { containsSensitiveValue, isSafeProjectContextFile } from "../security/pr
 
 export { containsSensitiveValue } from "../security/project-content";
 
-export function containsSensitiveValue(value: string) {
-  return /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value)
-    || /\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b/.test(value)
-    || /\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|secret|password|passwd|bearer|refresh[_-]?token)\s*[:=]\s*["']?[^\s"',;]{8,}/i.test(value);
-}
-
 function savedProjectContext(settings: string | null) {
   if (!settings) return "";
   try {
