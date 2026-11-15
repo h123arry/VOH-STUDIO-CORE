@@ -1,6 +1,6 @@
 import type { Project } from "../../drizzle/schema";
 
-export type TemplateKind = "website" | "web_app" | "mobile" | "native_mobile" | "game" | "ai_app" | "api" | "backend" | "automation" | "dashboard" | "saas";
+export type TemplateKind = "website" | "web_app" | "mobile" | "native_mobile" | "game" | "ai_app" | "desktop" | "api" | "backend" | "automation" | "dashboard" | "saas";
 export type TemplateFile = { path: string; content: string };
 export type ProjectTemplate = { kind: TemplateKind; name: string; runtime: string; buildCommand: string; testCommand: string; files: (project: Project, objective: string) => TemplateFile[] };
 
@@ -515,6 +515,120 @@ console.log("Authentication, SQLite persistence and per-user data-isolation chec
   ];
 };
 
+const desktopFiles = (project: Project, objective: string): TemplateFile[] => {
+  const name = escapeHtml(project.name);
+  const description = escapeHtml(objective);
+  const packageFile = JSON.stringify({
+    name: project.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 40),
+    productName: project.name, version: "1.0.0", private: true, main: "src/main.cjs",
+    scripts: { start: "electron .", build: "electron-builder --dir", test: "node scripts/test.cjs" },
+    devDependencies: { electron: "latest", "electron-builder": "latest" },
+    build: { appId: "com.vohstudio.desktopapp", productName: project.name, files: ["src/**/*", "public/**/*", "package.json"], directories: { output: "release" } }
+  }, null, 2) + "\n";
+  const main = `const { app, BrowserWindow, ipcMain } = require("electron");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const { randomUUID } = require("node:crypto");
+const dataFile = () => path.join(app.getPath("userData"), "notes.json");
+async function readNotes() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(dataFile(), "utf8"));
+    return Array.isArray(parsed) ? parsed.filter(note => note && typeof note.id === "string" && typeof note.text === "string").slice(0, 100) : [];
+  } catch (error) { if (error.code === "ENOENT") return []; throw error; }
+}
+ipcMain.handle("notes:load", async () => readNotes());
+ipcMain.handle("notes:save", async (_event, input) => {
+  if (!Array.isArray(input) || input.length > 100) throw new Error("Keep no more than 100 notes.");
+  const notes = input.map(note => {
+    if (!note || typeof note.id !== "string" || typeof note.text !== "string" || !note.text.trim() || note.text.length > 2000) throw new Error("Invalid note.");
+    return { id: note.id.slice(0, 80), text: note.text.trim(), updatedAt: Date.now() };
+  });
+  const destination = dataFile();
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  const temporary = destination + "." + randomUUID() + ".tmp";
+  try {
+    await fs.writeFile(temporary, JSON.stringify(notes), { flag: "wx", mode: 0o600 });
+    await fs.rename(temporary, destination);
+  } catch (error) { await fs.rm(temporary, { force: true }).catch(() => undefined); throw error; }
+  return { saved: true, count: notes.length };
+});
+function createWindow() {
+  const window = new BrowserWindow({
+    width: 1120, height: 760, minWidth: 360, minHeight: 520,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  void window.loadFile(path.join(__dirname, "..", "public", "index.html"));
+}
+app.whenReady().then(createWindow);
+app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+`;
+  const preload = `const { contextBridge, ipcRenderer } = require("electron");
+contextBridge.exposeInMainWorld("vohDesktop", {
+  notes: {
+    load: () => ipcRenderer.invoke("notes:load"),
+    save: notes => ipcRenderer.invoke("notes:save", notes),
+  },
+});
+`;
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\'; object-src \'none\'; base-uri \'none\';"><title>' + name + '</title><link rel="stylesheet" href="styles.css"></head><body><main><header><p class="eyebrow">VOH DESKTOP</p><h1>' + name + '</h1><p>' + description + '</p></header><section class="panel"><form id="note-form"><label for="note">New note</label><textarea id="note" maxlength="2000" required placeholder="Write something worth keeping..."></textarea><button type="submit">Save note</button></form><p id="status" role="status" aria-live="polite"></p><ul id="notes"></ul></section></main><script src="renderer.js"></script></body></html>';
+  const renderer = `const form = document.querySelector("#note-form");
+const input = document.querySelector("#note");
+const list = document.querySelector("#notes");
+const status = document.querySelector("#status");
+let notes = [];
+function render() {
+  list.replaceChildren();
+  for (const note of notes) {
+    const row = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = note.text;
+    const remove = document.createElement("button");
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      notes = notes.filter(item => item.id !== note.id);
+      await save();
+    });
+    row.append(text, remove);
+    list.append(row);
+  }
+}
+async function save() {
+  try {
+    const result = await window.vohDesktop.notes.save(notes);
+    status.textContent = "Saved locally · " + result.count + " notes";
+    render();
+  } catch (error) { status.textContent = error.message || "Could not save notes."; }
+}
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  notes.unshift({ id: crypto.randomUUID(), text });
+  input.value = "";
+  await save();
+});
+window.vohDesktop.notes.load().then(value => { notes = value; render(); status.textContent = "Your notes are stored in this desktop app's private data folder."; }).catch(error => { status.textContent = error.message; });
+`;
+  const css = ':root{font-family:Inter,system-ui,sans-serif;color:#f1f1f3;background:#0c0d12}*{box-sizing:border-box}body{margin:0;padding:32px}main{max-width:900px;margin:auto}header{margin-bottom:28px}.eyebrow{font-size:10px;letter-spacing:.2em;font-weight:800;color:#aaa}h1{font-size:clamp(34px,6vw,54px);letter-spacing:-.05em;margin:12px 0}header p:last-child{color:#a2a3ad;line-height:1.7}.panel{padding:22px;border:1px solid #303139;border-radius:12px;background:#14151c}form{display:grid;gap:12px}label{font-size:12px;font-weight:700;color:#c8c8d0}textarea{min-height:110px;padding:13px;border:1px solid #383944;border-radius:8px;background:#0b0c12;color:white;font:inherit;resize:vertical}button{padding:10px 15px;border:0;border-radius:7px;background:#eee;color:#111;font-weight:800;cursor:pointer}form button{justify-self:start}#status{min-height:22px;color:#aaa;font-size:12px}ul{list-style:none;padding:0;display:grid;gap:9px}li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;border:1px solid #303139;border-radius:8px;background:#1b1c24}li span{white-space:pre-wrap;overflow-wrap:anywhere}li button{background:transparent;color:#d99a9e}';
+  return [
+    { path: "package.json", content: packageFile },
+    { path: ".gitignore", content: "node_modules/\nrelease/\ndist/\n*.log\n" },
+    { path: "src/main.cjs", content: main },
+    { path: "src/preload.cjs", content: preload },
+    { path: "public/index.html", content: html },
+    { path: "public/renderer.js", content: renderer },
+    { path: "public/styles.css", content: css },
+    { path: "scripts/test.cjs", content: "const fs=require('node:fs');const main=fs.readFileSync('src/main.cjs','utf8');const preload=fs.readFileSync('src/preload.cjs','utf8');const html=fs.readFileSync('public/index.html','utf8');if(!main.includes('contextIsolation: true')||!main.includes('sandbox: true')||!main.includes('nodeIntegration: false'))throw new Error('Electron renderer security configuration is incomplete');if(!preload.includes('contextBridge.exposeInMainWorld')||!preload.includes('ipcRenderer.invoke'))throw new Error('Preload bridge is missing');if(!html.includes('Content-Security-Policy'))throw new Error('Renderer CSP is missing');console.log('Desktop source and renderer isolation checks passed.');\n" },
+    { path: "README.md", content: "# " + project.name + "\n\nElectron desktop application source starter.\n\nObjective: " + objective + "\n\nRun pnpm install, pnpm test, then pnpm start. Build a platform-specific unpacked app with pnpm build; distribution installers require platform-specific packaging and signing configuration.\n\nThe renderer runs with context isolation and Chromium sandbox enabled, Node integration disabled, and a narrow preload IPC bridge. Notes are stored locally in Electron's app data directory using atomic writes. This starter does not provide cloud sync or an installer signed for distribution.\n" },
+  ];
+};
+
 const apiFiles = (project: Project, objective: string): TemplateFile[] => [
   { path: "package.json", content: packageJson(project.name, { build: "node scripts/check.mjs", test: "node scripts/check.mjs", start: "node src/server.mjs" }) },
   { path: "src/server.mjs", content: `import { createServer } from 'node:http';\nconst service = ${JSON.stringify(project.name)};\nconst objective = ${JSON.stringify(objective)};\ncreateServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ service, objective, status: 'ok' })); }).listen(4173, () => console.log('API listening on 4173'));\n` },
@@ -526,6 +640,7 @@ const templates: ProjectTemplate[] = [
   { kind: "website", name: "Responsive multi-page business website", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: websiteFiles },
   { kind: "ai_app", name: "Server-backed AI chat application", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: aiAppFiles },
   { kind: "web_app", name: "Authenticated SQLite web application", runtime: "Node 22.13+", buildCommand: "pnpm build", testCommand: "pnpm test", files: webAppFiles },
+  { kind: "desktop", name: "Secure Electron desktop application source", runtime: "Electron / Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: desktopFiles },
   { kind: "mobile", name: "Installable mobile web app (PWA)", runtime: "Modern mobile browser", buildCommand: "pnpm build", testCommand: "pnpm test", files: mobileFiles },
   { kind: "native_mobile", name: "Expo and React Native native app source", runtime: "Expo / React Native", buildCommand: "pnpm build", testCommand: "pnpm test", files: nativeMobileFiles },
   { kind: "game", name: "2D browser game", runtime: "Node 22", buildCommand: "pnpm build", testCommand: "pnpm test", files: gameFiles },

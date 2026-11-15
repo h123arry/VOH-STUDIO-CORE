@@ -37,7 +37,7 @@ import { analyzeProduct, inferProductBlueprint, inspectProductText } from "./int
 import { engineeringAnalysis, engineeringBrief, maintenancePlan } from "./intelligence/engineering-intelligence";
 import { buildCreationPlan, capabilityCatalog, crossProjectReuse, explainCreationResult, inferCreationMode, matchCapabilities } from "./intelligence/creation-engine";
 
-const projectType = z.enum(["website", "web_app", "api", "backend", "mobile", "native_mobile", "game", "ai_app", "automation", "dashboard", "saas"]);
+const projectType = z.enum(["website", "web_app", "api", "backend", "mobile", "native_mobile", "desktop", "game", "ai_app", "automation", "dashboard", "saas"]);
 const projectSettings = z.object({
   developerMode: z.boolean().optional(),
   commandPolicy: z.literal("safe").optional(),
