@@ -73,7 +73,7 @@ export default function WorkspaceRecoveryPanel({
           </select>
           {comparison.isLoading ? (
             <p className="workspace-recovery-muted" role="status">
-              Comparing workspace file lists…
+              Comparing workspace file contents…
             </p>
           ) : comparison.isError ? (
             <p className="workspace-recovery-error" role="alert">
