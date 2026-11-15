@@ -8,7 +8,7 @@ import { containsSensitiveValue, isSensitiveProjectPath } from "../security/proj
 const MAX_ARCHIVE_FILES = 500;
 const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-export async function readRegularWorkspaceFile(root: string, relativePath: string) {
+export async function readRegularWorkspaceFile(root: string, relativePath: string): Promise<Buffer | null> {
   const safe = normalizeWorkspacePath(relativePath);
   const absolute = path.resolve(root, safe);
   if (absolute !== root && !absolute.startsWith(root + path.sep)) {
@@ -33,7 +33,7 @@ export async function readRegularWorkspaceFile(root: string, relativePath: strin
   try {
     const opened = await handle.stat();
     if (!opened.isFile()) throw new Error("Only regular files can be included in project exports");
-    if (opened.size > MAX_FILE_BYTES) throw new Error("Project export file exceeds the per-file limit");
+    if (opened.size > MAX_FILE_BYTES) return null;
     return await handle.readFile();
   } finally {
     await handle.close();
@@ -133,7 +133,12 @@ export async function createWorkspaceZip(projectId: number) {
     const safe = normalizeWorkspacePath(file.path);
     let content: Buffer;
     try {
-      content = await readRegularWorkspaceFile(root, safe);
+      const read = await readRegularWorkspaceFile(root, safe);
+      if (!read) {
+        skippedFiles++;
+        continue;
+      }
+      content = read;
     } catch (error) {
       if (error instanceof Error && /Symbolic links|regular files|parent path/.test(error.message)) {
         skippedFiles++;
