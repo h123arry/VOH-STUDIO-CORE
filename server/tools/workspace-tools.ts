@@ -91,7 +91,8 @@ export async function listWorkspaceFiles(projectId: number) {
   await walk(workspace); return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function readWorkspaceFile(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const result = await readRegularWorkspaceFile(workspace, relativePath, MAX_FILE_BYTES); return result.content.toString("utf8"); }
+export async function readWorkspaceFileBuffer(projectId: number, relativePath: string, maxBytes = MAX_SNAPSHOT_BYTES) { const workspace = await ensureWorkspace(projectId); return readRegularWorkspaceFile(workspace, relativePath, maxBytes); }
+export async function readWorkspaceFile(projectId: number, relativePath: string) { const result = await readWorkspaceFileBuffer(projectId, relativePath, MAX_FILE_BYTES); return result.content.toString("utf8"); }
 export async function readWorkspaceAsset(projectId: number, relativePath: string) { const workspace = await ensureWorkspace(projectId); const safe = safePath(relativePath); const result = await readRegularWorkspaceFile(workspace, safe, 2_000_000); return { path: safe, content: result.content, size: result.size }; }
 
 export async function writeWorkspaceFile(projectId: number, relativePath: string, content: string, lastOperation = "write", createOnly = false) {
@@ -299,20 +300,12 @@ export async function snapshotWorkspace(projectId: number, snapshotId: string) {
   let copiedBytes = 0;
   try {
     for (const file of files) {
-      const source = path.join(workspace, file.path);
-      const sourceStat = await fs.lstat(source);
-      if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error("Snapshot source must be a regular file");
-      const realSource = await fs.realpath(source);
-      if (realSource !== workspace && !realSource.startsWith(`${workspace}${path.sep}`)) {
-        throw new Error("Snapshot source resolves outside the project workspace");
-      }
-      if (copiedBytes + sourceStat.size > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
+      const remainingBytes = MAX_SNAPSHOT_BYTES - copiedBytes;
+      const sourceFile = await readWorkspaceFileBuffer(projectId, file.path, remainingBytes);
       const targetParent = await ensureSnapshotSubdirectory(snapshotRoot, path.dirname(file.path));
       const target = path.join(targetParent, path.basename(file.path));
-      await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
-      const copiedStat = await fs.lstat(target);
-      if (copiedStat.isSymbolicLink() || !copiedStat.isFile()) throw new Error("Snapshot destination must be a regular file");
-      copiedBytes += copiedStat.size;
+      await fs.writeFile(target, sourceFile.content, { flag: "wx", mode: 0o600 });
+      copiedBytes += sourceFile.content.length;
       if (copiedBytes > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES}-byte storage limit`);
     }
   } catch (error) {
