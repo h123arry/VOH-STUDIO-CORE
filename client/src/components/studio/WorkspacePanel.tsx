@@ -34,7 +34,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
   const [newFilePath, setNewFilePath] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const normalizedFileQuery = fileQuery.trim().toLowerCase();
-  const visibleFiles = files.filter(file => !normalizedFileQuery || file.path.toLowerCase().includes(normalizedFileQuery));
+  const visibleFiles = files.filter(file => !normalizedFileQuery || file.path.toLowerCase().includes(normalizedFileQuery) || (file.content ?? "").toLowerCase().includes(normalizedFileQuery));
   const visibleUnindexedFiles = unindexedFiles.filter(file => !normalizedFileQuery || file.path.toLowerCase().includes(normalizedFileQuery));
   const saveFile = trpc.workspace.writeFile.useMutation({
     onSuccess: async () => {
@@ -109,7 +109,7 @@ export default function WorkspacePanel({ detail, selectedPath, onSelect }: {
         <button type="button" onClick={() => { setCreating(value => !value); createFile.reset(); }} disabled={!detail?.project || createFile.isPending || saveFile.isPending} className="mb-2 flex w-full items-center gap-2 rounded border border-dashed border-[#3a3d45] px-2 py-2 text-left text-[10px] text-[#c4c7ce] hover:bg-[#202228]"><Plus size={12} /> New file</button>
         <div className="mb-3 flex items-center gap-2 rounded border border-[#303238] bg-[#0b0c0f] px-2 py-2 text-[#858891]">
           <Search size={12} />
-          <input aria-label="Search workspace files" value={fileQuery} onChange={event => setFileQuery(event.target.value)} placeholder="Find a file…" className="min-w-0 w-full bg-transparent text-[10px] text-[#e5e7eb] outline-none placeholder:text-[#666a73]" />
+          <input aria-label="Search workspace files" value={fileQuery} onChange={event => setFileQuery(event.target.value)} placeholder="Search paths and indexed text…" className="min-w-0 w-full bg-transparent text-[10px] text-[#e5e7eb] outline-none placeholder:text-[#666a73]" />
           {fileQuery && <button type="button" aria-label="Clear file search" onClick={() => setFileQuery("")} className="text-[10px] text-[#858891] hover:text-[#f3f4f6]">Clear</button>}
         </div>
         {creating && <form onSubmit={event => { event.preventDefault(); if (!detail?.project || !newFilePath.trim()) return; createFile.mutate({ projectId: detail.project.id, path: newFilePath.trim(), content: "" }); }} className="mb-3 space-y-2 rounded border border-[#3a3d45] bg-[#111216] p-2">
