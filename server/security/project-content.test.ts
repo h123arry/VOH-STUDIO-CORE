@@ -38,3 +38,20 @@ describe("sensitive project content filtering", () => {
     expect(isSafeProjectContextFile("README.md", "This project builds a web workspace.")).toBe(true);
   });
 });
+
+
+describe("additional provider credential patterns", () => {
+  it("recognizes service-role keys, database URLs, Stripe secrets, and JWTs", () => {
+    const sensitiveValues = [
+      "const SUPABASE_SERVICE_ROLE_KEY = \"" + "x".repeat(32) + "\";",
+      "const DATABASE_URL = \"postgres://user:" + "p".repeat(24) + "@localhost/db\";",
+      "const stripeSecret = \"sk_live_" + "x".repeat(24) + "\";",
+      "const token = \"eyJ" + "a".repeat(20) + "." + "b".repeat(20) + "." + "c".repeat(20) + "\";",
+    ];
+    for (const value of sensitiveValues) expect(containsSensitiveValue(value)).toBe(true);
+  });
+
+  it("does not flag ordinary theme keys as credentials", () => {
+    expect(containsSensitiveValue('const themeKey = "dark-mode";')).toBe(false);
+  });
+});
