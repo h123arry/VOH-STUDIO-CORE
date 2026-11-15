@@ -8,6 +8,7 @@ import { clearProjectContext } from "../context/context-engine";
 import { getDb } from "../db";
 import { ensureWorkspace, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, snapshotWorkspace } from "../tools/workspace-tools";
 import { compareSnapshotFileHashes } from "./snapshot-diff";
+import { restoreWorkspaceDirectoryAtomically } from "./snapshot-restore";
 import { assertSnapshotTreeHasNoSymlinks, resolveSnapshotDirectory } from "./snapshot-paths";
 
 const ROOT = path.resolve(
@@ -67,46 +68,57 @@ export async function restoreProjectSnapshot(
   await assertSnapshotTreeHasNoSymlinks(source);
 
   const workspace = await ensureWorkspace(projectId);
-  await fs.rm(workspace, { recursive: true, force: true });
-  await fs.mkdir(workspace, { recursive: true });
-  const restoredWorkspace = await ensureWorkspace(projectId);
-  await fs.cp(source, restoredWorkspace, {
-    recursive: true,
-    force: true,
-    dereference: false,
-  });
+  const workspaceParent = path.dirname(workspace);
+  const workspaceName = path.basename(workspace);
+  const restoreToken = crypto.randomUUID();
+  const staging = path.join(workspaceParent, `.${workspaceName}.restore-${restoreToken}`);
+  const backup = path.join(workspaceParent, `.${workspaceName}.backup-${restoreToken}`);
 
-  const relativePaths = await listRelativeFiles(restoredWorkspace);
-  const indexedFiles: Array<typeof projectFiles.$inferInsert> = [];
-  for (const relativePath of relativePaths) {
-    const absolutePath = path.join(restoredWorkspace, relativePath);
-    const fileStat = await fs.stat(absolutePath);
-    if (fileStat.size > 60_000) continue;
-    const content = await fs.readFile(absolutePath, "utf8");
-    if (content.includes("\0")) continue;
-    indexedFiles.push({
-      projectId,
-      path: relativePath,
-      language: path.extname(relativePath).slice(1) || undefined,
-      contentHash: crypto.createHash("sha256").update(content).digest("hex"),
-      size: Buffer.byteLength(content, "utf8"),
-      content,
-      lastOperation: "restore",
+  try {
+    await fs.cp(source, staging, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      dereference: false,
     });
+    await assertSnapshotTreeHasNoSymlinks(staging);
+    const relativePaths = await listRelativeFiles(staging);
+    const indexedFiles: Array<typeof projectFiles.$inferInsert> = [];
+    for (const relativePath of relativePaths) {
+      const absolutePath = path.join(staging, relativePath);
+      const fileStat = await fs.stat(absolutePath);
+      if (fileStat.size > 60_000) continue;
+      const content = await fs.readFile(absolutePath, "utf8");
+      if (content.includes("\\0")) continue;
+      indexedFiles.push({
+        projectId,
+        path: relativePath,
+        language: path.extname(relativePath).slice(1) || undefined,
+        contentHash: crypto.createHash("sha256").update(content).digest("hex"),
+        size: Buffer.byteLength(content, "utf8"),
+        content,
+        lastOperation: "restore",
+      });
+    }
+
+    await restoreWorkspaceDirectoryAtomically(workspace, staging, backup, async () => {
+      await db.transaction(async transaction => {
+        await transaction
+          .delete(projectFiles)
+          .where(eq(projectFiles.projectId, projectId));
+        if (indexedFiles.length) await transaction.insert(projectFiles).values(indexedFiles);
+      });
+    });
+    clearProjectContext(projectId);
+    return {
+      success: true,
+      snapshotId: row.id,
+      restoredFiles: relativePaths.length,
+    };
+  } catch (error) {
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
-  await db.transaction(async transaction => {
-    await transaction
-      .delete(projectFiles)
-      .where(eq(projectFiles.projectId, projectId));
-    if (indexedFiles.length)
-      await transaction.insert(projectFiles).values(indexedFiles);
-  });
-  clearProjectContext(projectId);
-  return {
-    success: true,
-    snapshotId: row.id,
-    restoredFiles: relativePaths.length,
-  };
 }
 
 export async function compareProjectSnapshot(
