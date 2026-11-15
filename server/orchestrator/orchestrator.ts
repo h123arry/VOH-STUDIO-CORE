@@ -25,6 +25,16 @@ class TaskCancelled extends Error { constructor() { super("Task was cancelled by
 class TaskPaused extends Error { constructor() { super("Task was paused by the operator"); } }
 const relevantFileContext = (files: Array<{ path: string; content: string }>) => files.slice(0, 8).map(file => `File: ${file.path}\n${file.content.slice(0, 1200)}`).join("\n\n").slice(0, 10_000);
 
+export function selectFilesToWrite(
+  generatedFiles: Array<{ path: string; content: string }>,
+  existingFiles: Array<{ path: string; content: string }>,
+  preserveExistingProject: boolean
+) {
+  if (!preserveExistingProject) return generatedFiles;
+  const existingByPath = new Map(existingFiles.map(file => [file.path, file.content]));
+  return generatedFiles.filter(file => !existingByPath.has(file.path) || existingByPath.get(file.path) !== file.content);
+}
+
 async function assertTaskActive(taskId: number) { if (await isTaskCancelled(taskId)) throw new TaskCancelled(); if (await isTaskPaused(taskId)) throw new TaskPaused(); }
 async function setProgress(taskId: number, progress: number, currentPhase: "plan" | "build" | "run" | "test" | "inspect" | "debug" | "patch" | "rebuild" | "retest" | "complete" | "failed", activeAgent?: string) {
   await assertTaskActive(taskId);
@@ -200,9 +210,7 @@ export async function runTask(taskId: number, ownerId: number) {
       const sourceGeneration = await createProjectFiles({ objective: task.approvedPlan ? `${task.objective}\n\nApproved implementation plan (follow this user-approved version):\n${task.approvedPlan}` : task.objective, projectType: project.projectType, templateName: template.name, files: templateFiles, projectMemory: (await buildProjectMemory(project.id)).savedContext, preserveProject: task.executionMode === "build_more", onRequestStart: modelId => appendTaskEvent({ taskId, eventType: "source.generation.started", actor: "frontend", phase: "build", summary: task.executionMode === "build_more" ? "Started a code-generation request to extend the existing source." : "Started a code-generation request for the selected starter.", metadata: { modelId } }) });
       await assertTaskActive(taskId);
       const generatedFiles = sourceGeneration.files;
-      const filesToWrite = modePolicy.preserveExistingProject
-        ? generatedFiles.filter(file => templateFiles.some(existing => existing.path === file.path && existing.content !== file.content))
-        : generatedFiles;
+      const filesToWrite = selectFilesToWrite(generatedFiles, templateFiles, modePolicy.preserveExistingProject);
       if (modePolicy.preserveExistingProject && filesToWrite.length === 0) throw new Error("No source-file change was produced. The existing implementation was left untouched; narrow the requested enhancement or use Build for a new workspace.");
       const latestInventory = await inspectWorkspace(project.id);
       const latestPaths = new Set(latestInventory.files.filter(file => file.kind === "file").map(file => file.path));

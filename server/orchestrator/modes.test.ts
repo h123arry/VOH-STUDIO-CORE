@@ -72,7 +72,30 @@ vi.mock("../platform/llm-client", () => ({
   createProjectFiles: mocks.createProjectFiles,
 }));
 
-import { runTask } from "./orchestrator";
+import { runTask, selectFilesToWrite } from "./orchestrator";
+
+describe("Build More source selection", () => {
+  it("includes new files and changed existing files while preserving unchanged files", () => {
+    const existing = [
+      { path: "src/main.ts", content: "old implementation" },
+      { path: "src/styles.css", content: "same styles" },
+    ];
+    const generated = [
+      { path: "src/main.ts", content: "updated implementation" },
+      { path: "src/styles.css", content: "same styles" },
+      { path: "src/new-feature.ts", content: "new feature" },
+    ];
+    expect(selectFilesToWrite(generated, existing, true)).toEqual([
+      generated[0],
+      generated[2],
+    ]);
+  });
+
+  it("keeps the full generated file set for a new Build", () => {
+    const generated = [{ path: "index.html", content: "new site" }];
+    expect(selectFilesToWrite(generated, [], false)).toEqual(generated);
+  });
+});
 
 describe("mode-aware orchestration", () => {
   beforeEach(() => {
