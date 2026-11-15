@@ -24,6 +24,14 @@ export default function WorkspaceRecoveryPanel({
       refetchOnWindowFocus: false,
     }
   );
+  const remove = trpc.projects.snapshots.delete.useMutation({
+    onSuccess: async result => {
+      if (!projectId) return;
+      await utils.projects.get.invalidate({ projectId });
+      if (snapshotId === result.snapshotId) setSnapshotId(undefined);
+    },
+  });
+
   const restore = trpc.projects.snapshots.restore.useMutation({
     onSuccess: async result => {
       if (!projectId) return;
@@ -37,6 +45,15 @@ export default function WorkspaceRecoveryPanel({
       ]);
     },
   });
+
+  const deleteSnapshot = () => {
+    if (!projectId || !snapshotId || remove.isPending) return;
+    const selected = snapshots.find(snapshot => snapshot.id === snapshotId);
+    const confirmed = window.confirm(
+      `Permanently delete "${selected?.reason ?? "this recovery point"}"? This does not change the current workspace.`
+    );
+    if (confirmed) remove.mutate({ projectId, snapshotId, confirm: true });
+  };
 
   const restoreSnapshot = () => {
     if (!projectId || !snapshotId || restore.isPending) return;
@@ -111,14 +128,34 @@ export default function WorkspaceRecoveryPanel({
               </p>
             </div>
           ) : null}
-          <button
-            type="button"
-            className="workspace-recovery-restore"
-            disabled={!snapshotId || restore.isPending}
-            onClick={restoreSnapshot}
-          >
-            {restore.isPending ? "Restoring…" : "Restore this snapshot…"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="workspace-recovery-restore"
+              disabled={!snapshotId || restore.isPending || remove.isPending}
+              onClick={restoreSnapshot}
+            >
+              {restore.isPending ? "Restoring…" : "Restore this snapshot…"}
+            </button>
+            <button
+              type="button"
+              className="workspace-recovery-restore"
+              disabled={!snapshotId || restore.isPending || remove.isPending}
+              onClick={deleteSnapshot}
+            >
+              {remove.isPending ? "Deleting…" : "Delete snapshot"}
+            </button>
+          </div>
+          {remove.isError && (
+            <p className="workspace-recovery-error" role="alert">
+              Could not delete the snapshot: {remove.error.message}
+            </p>
+          )}
+          {remove.isSuccess && (
+            <p className="workspace-recovery-muted" role="status">
+              Recovery point deleted. The current workspace was not changed.
+            </p>
+          )}
           {restore.isError && (
             <p className="workspace-recovery-error" role="alert">
               Could not restore the snapshot: {restore.error.message}
