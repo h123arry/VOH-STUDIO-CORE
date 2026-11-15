@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
+import { createWorkspaceFile, deleteWorkspaceFile, ensureWorkspace, assertSnapshotInventoryWithinLimits, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_FILES, normalizeWorkspacePath, projectWorkspace, readWorkspaceAsset, readWorkspaceFile, renameWorkspaceFile, runWorkspaceCommand, writeWorkspaceFile } from "./tools/workspace-tools";
 
 describe("workspace path validation", () => {
   it("normalizes safe nested paths across separator styles", () => {
@@ -27,6 +27,42 @@ describe("workspace path validation", () => {
   });
 });
 
+
+describe("safe workspace file reads", () => {
+  it("reads regular source files and preview assets", async () => {
+    const projectId = 7_950_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "src"), { recursive: true });
+      await fs.writeFile(path.join(root, "src", "app.ts"), "export const ok = true;");
+      await fs.writeFile(path.join(root, "src", "image.bin"), Buffer.from([1, 2, 3]));
+      await expect(readWorkspaceFile(projectId, "src/app.ts")).resolves.toBe("export const ok = true;");
+      await expect(readWorkspaceAsset(projectId, "src/image.bin")).resolves.toMatchObject({
+        path: path.join("src", "image.bin"),
+        content: Buffer.from([1, 2, 3]),
+        size: 3,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects symlinked parent directories even when they point inside the workspace", async () => {
+    const projectId = 7_960_000 + process.pid;
+    const root = projectWorkspace(projectId);
+    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await fs.mkdir(path.join(root, "real"), { recursive: true });
+      await fs.writeFile(path.join(root, "real", "secret.txt"), "not directly addressable");
+      await fs.symlink(path.join(root, "real"), path.join(root, "linked"), "dir");
+      await expect(readWorkspaceFile(projectId, "linked/secret.txt")).rejects.toThrow("Symbolic links are not readable");
+      await expect(readWorkspaceAsset(projectId, "linked/secret.txt")).rejects.toThrow("Symbolic links are not readable");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("atomic workspace file writes", () => {
   it("creates nested files and replaces existing content completely", async () => {
